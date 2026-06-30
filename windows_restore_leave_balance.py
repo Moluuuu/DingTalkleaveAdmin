@@ -277,7 +277,7 @@ def restore_from_backup_file(
 
 def create_remote_backup_via_ssh(
     ssh_target: str,
-    remote_dir: str = "/opt/yida/leaveAdmin",
+    remote_dir: str = "/opt/leaveadmin",
     identity_file: str | None = None,
     local_dir: str | Path | None = None,
 ) -> Path:

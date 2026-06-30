@@ -1,6 +1,6 @@
 """
 公休余额管理后台 - 数据库模块
-独立SQLite: /opt/yida/leaveAdmin/admin.db
+独立SQLite: admin.db
 """
 import aiosqlite
 import json

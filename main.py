@@ -541,9 +541,10 @@ async def api_run_task(req: TaskRunRequest):
         path = "/api/annual-dept-reset"
     elif ttype == "dingpan_backup":
         import subprocess
+        BASE_DIR = Path(__file__).parent
         subprocess.Popen(
-            ["/opt/yida/leaveAdmin/run_dingpan_backup_cron.py"],
-            cwd="/opt/yida/leaveAdmin",
+            [str(BASE_DIR / "run_dingpan_backup_cron.py")],
+            cwd=str(BASE_DIR),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
