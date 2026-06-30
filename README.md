@@ -3,7 +3,7 @@
 ![](https://img.shields.io/badge/GPT%20Assisted-100%25-00a67d?logo=openai)
 ![](https://img.shields.io/badge/DeepSeek%20Assisted-100%25-00a67d)
 
-基于 FastAPI + SQLite 的企业假期余额管理后台，支持余额权威自持、钉钉镜像同步、灾备恢复。
+基于 FastAPI + SQLite 的企业假期余额管理后台，支持余额个性化管理、钉钉镜像同步、灾备恢复。
 
 ## 架构概览
 
