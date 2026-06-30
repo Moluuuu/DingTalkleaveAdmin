@@ -1,0 +1,49 @@
+# secrets / local config
+config.json
+dingpan_backup_config.json
+constants.yaml
+.env
+.env.*
+*.secret*
+*token*
+*cookie*
+.cache/
+
+# databases / backups / runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+admin.db*
+backups/
+logs/
+*.tar.gz
+*.gz
+*.zip
+
+# Python / test / venv
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# local / internal agent context
+CLAUDE.md
+claude_task.md
+claude_continue.md
+migrate_hired_date.py
+DINGPAN_BACKUP.md
+README_*.md
+
+# OS/editor / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.pyw.bak

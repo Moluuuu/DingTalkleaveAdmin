@@ -1,0 +1,1897 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公休余额管理后台</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --c-primary:#4f46e5;
+  --c-primary-h:#4338ca;
+  --c-primary-l:#eef2ff;
+  --c-heading:#0f172a;
+  --c-body:#475569;
+  --c-muted:#94a3b8;
+  --c-border:#e2e8f0;
+  --c-border-l:#f1f5f9;
+  --c-bg:#f8fafc;
+  --c-surface:#ffffff;
+  --c-success:#10b981;
+  --c-success-l:#ecfdf5;
+  --c-warn:#f59e0b;
+  --c-danger:#ef4444;
+  --c-danger-l:#fef2f2;
+  --sh-sm:0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --sh-md:0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --sh-lg:0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  --sh-xl:0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.06);
+}
+body { font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif; background:var(--c-bg); color:var(--c-body); font-size:14px; -webkit-font-smoothing:antialiased; }
+
+/* Header */
+.header { background:var(--c-surface); padding:0 24px; height:56px; box-shadow:var(--sh-sm); display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; border-bottom:1px solid var(--c-border); }
+.header h1 { font-size:16px; color:var(--c-heading); font-weight:600; letter-spacing:-0.01em; }
+.header-actions button { margin-left:6px; padding:7px 16px; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; transition:all .15s; }
+
+/* Buttons - 三级按钮体系:Primary主色实心 / Default白底线框 / Danger红色 */
+button { font-family:inherit; border:none; cursor:pointer; transition:all .15s; }
+.btn-primary { background:var(--c-primary); color:#fff; border-radius:6px; }
+.btn-primary:hover { background:var(--c-primary-h); }
+.btn-success { background:var(--c-primary); color:#fff; border-radius:6px; }
+.btn-success:hover { background:var(--c-primary-h); }
+.btn-warn { background:var(--c-surface); color:var(--c-heading); border:1px solid var(--c-border); border-radius:6px; }
+.btn-warn:hover { background:var(--c-bg); border-color:var(--c-muted); }
+.btn-danger { background:var(--c-danger); color:#fff; border-radius:6px; }
+.btn-danger:hover { background:#dc2626; }
+.btn-default { background:var(--c-surface); color:var(--c-body); border:1px solid var(--c-border); border-radius:6px; }
+.btn-default:hover { background:var(--c-bg); border-color:var(--c-muted); color:var(--c-heading); }
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+
+/* Layout */
+.container { max-width:1400px; margin:20px auto; padding:0 20px; }
+
+/* Stat cards - 标题在上、数字在下,仅预警卡片标红 */
+.stat-cards { display:flex; gap:16px; margin-bottom:20px; }
+.stat-card { flex:1; background:var(--c-surface); padding:18px 20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--sh-sm); }
+.stat-card .label { font-size:13px; color:var(--c-muted); font-weight:500; margin-bottom:8px; }
+.stat-card .num { font-size:30px; font-weight:700; color:var(--c-heading); line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
+.stat-card.stat-warn .num { color:var(--c-danger); }
+
+/* Tabs */
+.tabs { display:flex; gap:2px; margin-bottom:0; padding-left:4px; }
+.tab { padding:10px 20px; background:transparent; border:none; border-bottom:2px solid transparent; cursor:pointer; font-size:13px; color:var(--c-muted); font-weight:500; transition:all .15s; }
+.tab:hover { color:var(--c-body); }
+.tab.active { color:var(--c-primary); border-bottom-color:var(--c-primary); }
+
+/* Panel */
+.panel { background:var(--c-surface); padding:20px; border:1px solid var(--c-border); border-top:none; border-radius:0 0 10px 10px; box-shadow:var(--sh-sm); }
+
+/* Toolbar - 筛选左、操作右 */
+.toolbar { display:flex; gap:12px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+.toolbar input, .toolbar select { padding:8px 12px; border:1px solid var(--c-border); border-radius:6px; font-size:13px; color:var(--c-heading); background:var(--c-surface); transition:all .15s; }
+.toolbar input:focus, .toolbar select:focus { border-color:var(--c-primary); box-shadow:0 0 0 3px var(--c-primary-l); outline:none; }
+.toolbar button { padding:8px 14px; font-size:12px; font-weight:500; border-radius:6px; cursor:pointer; transition:all .15s; }
+.toolbar-spacer { flex:1; }
+.table-meta { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; padding:0 4px; }
+.table-meta span { font-size:12px; color:var(--c-muted); font-variant-numeric:tabular-nums; }
+.pager { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--c-muted); }
+.pager button { padding:4px 9px; font-size:12px; }
+.pager .page-current { color:var(--c-heading); font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* Combobox */
+.combobox { position:relative; display:inline-block; }
+.combobox input { width:100%; padding:8px 12px; border:1px solid var(--c-border); border-radius:6px; font-size:13px; box-sizing:border-box; color:var(--c-heading); background:var(--c-surface); transition:all .15s; }
+.combobox input:focus { border-color:var(--c-primary); box-shadow:0 0 0 3px var(--c-primary-l); outline:none; }
+.combobox-list { display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:240px; overflow-y:auto; background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; z-index:50; box-shadow:var(--sh-lg); }
+.combobox-list div { padding:8px 12px; cursor:pointer; font-size:13px; color:var(--c-heading); }
+.combobox-list div:hover, .combobox-list div.active { background:var(--c-primary-l); color:var(--c-primary); }
+.combobox-list div.empty { color:var(--c-muted); cursor:default; }
+
+/* Table */
+table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:13px; }
+th { background:var(--c-bg); padding:10px 12px; text-align:left; border-bottom:1px solid var(--c-border); white-space:nowrap; font-weight:600; color:var(--c-heading); font-size:12px; text-transform:uppercase; letter-spacing:0.03em; }
+td { padding:10px 12px; border-bottom:1px solid var(--c-border-l); color:var(--c-body); font-variant-numeric:tabular-nums; vertical-align:middle; overflow:hidden; text-overflow:ellipsis; }
+tbody tr:nth-child(even) td { background:#fbfdff; }
+tr:hover td { background:var(--c-primary-l); }
+td:first-child, th:first-child { padding-left:16px; }
+
+/* Cron task table */
+.cron-table th:nth-child(1), .cron-table td:nth-child(1) { width:190px; }
+.cron-table th:nth-child(2), .cron-table td:nth-child(2) { width:140px; }
+.cron-table th:nth-child(3), .cron-table td:nth-child(3) { width:180px; }
+.cron-table th:nth-child(4), .cron-table td:nth-child(4) { width:82px; }
+.cron-table th:nth-child(5), .cron-table td:nth-child(5) { width:110px; }
+.cron-table th:nth-child(6), .cron-table td:nth-child(6) { width:80px; }
+.cron-table th:nth-child(7), .cron-table td:nth-child(7) { width:230px; }
+.cron-actions { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; white-space:nowrap; overflow:visible; }
+.cron-actions button { flex:0 0 auto; height:25px; display:inline-flex; align-items:center; justify-content:center; padding:4px 10px; font-size:11px; line-height:1.35; }
+
+/* Tags - 胶囊样式,加大padding */
+.tag { padding:3px 10px; border-radius:4px; font-size:11px; font-weight:500; display:inline-block; }
+.tag-hourly { background:#fef3c7; color:#92400e; }
+.tag-six { background:#cffafe; color:#0e7490; }
+.tag-me { background:#ede9fe; color:#5b21b6; }
+.tag-other { background:#f1f5f9; color:#64748b; }
+
+/* Balance - 常规深灰,仅预警标红 */
+.balance-normal { color:var(--c-heading); }
+.balance-low { color:var(--c-danger); font-weight:600; }
+.balance-ok { color:var(--c-heading); }
+
+/* 数字列右对齐 */
+.col-num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; padding-right:18px; }
+th.col-num { text-align:right; padding-right:18px; }
+
+/* Inputs in tables */
+.adjust-input { width:80px; padding:5px 10px; border:1px solid var(--c-border); border-radius:6px; }
+.rules-table td input { width:80px; padding:6px 10px; border:1px solid var(--c-border); border-radius:6px; }
+.future-section { margin-top:28px; padding-top:22px; border-top:1px solid var(--c-border-l); }
+.future-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.future-title h3 { margin:0 0 4px; color:var(--c-heading); font-size:17px; font-weight:700; }
+.future-title p { margin:0; color:var(--c-muted); font-size:12px; line-height:1.6; }
+.future-actions .btn-default { padding:7px 14px; font-size:12px; height:32px; white-space:nowrap; }
+.future-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:12px 0; }
+.future-metric { background:var(--c-bg); border:1px solid var(--c-border-l); border-radius:10px; padding:12px 14px; }
+.future-metric-label { color:var(--c-muted); font-size:12px; font-weight:500; margin-bottom:6px; }
+.future-metric-value { color:var(--c-heading); font-size:20px; line-height:1; font-weight:700; font-variant-numeric:tabular-nums; }
+.future-metric.is-warn .future-metric-value { color:var(--c-danger); }
+.future-table-wrap { border:1px solid var(--c-border); border-radius:10px; overflow:hidden; background:var(--c-surface); }
+.future-table-wrap .rules-table { margin:0; border:none; }
+.future-table-wrap .rules-table th { background:var(--c-bg); }
+
+/* Modal */
+.modal-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgb(15 23 42 / 0.38); z-index:200; justify-content:center; align-items:center; }
+.modal { background:var(--c-surface); border-radius:12px; padding:28px; min-width:420px; max-width:600px; max-height:80vh; overflow-y:auto; box-shadow:var(--sh-xl); }
+.modal h3 { margin-bottom:20px; font-size:17px; font-weight:600; color:var(--c-heading); letter-spacing:-0.01em; }
+.modal-row { margin-bottom:16px; }
+.modal-row label { display:block; margin-bottom:6px; font-size:13px; color:var(--c-body); font-weight:500; }
+.modal-row input, .modal-row select, .modal-row textarea { width:100%; padding:9px 12px; border:1px solid var(--c-border); border-radius:6px; color:var(--c-heading); font-size:13px; background:var(--c-surface); transition:all .15s; }
+.modal-row input:focus, .modal-row select:focus, .modal-row textarea:focus { border-color:var(--c-primary); box-shadow:0 0 0 3px var(--c-primary-l); outline:none; }
+.modal-actions { text-align:right; margin-top:20px; }
+.modal-actions button { margin-left:8px; padding:9px 22px; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; transition:all .15s; }
+
+/* Preview bar */
+#previewBar { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 16px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; }
+
+/* Toast */
+.toast { position:fixed; top:72px; right:20px; padding:13px 22px; background:var(--c-heading); color:#fff; border-radius:8px; z-index:300; display:none; font-size:14px; font-weight:500; box-shadow:var(--sh-lg); }
+.toast.success { background:var(--c-success); }
+.toast.error { background:var(--c-danger); }
+
+/* Loading */
+.loading { display:none; text-align:center; padding:40px; color:var(--c-muted); }
+button { font-family:inherit; }
+input, select { font-family:inherit; }
+
+
+/* Employee detail dialog */
+.balance-detail-link { display:inline-flex; justify-content:flex-end; min-width:72px; padding:3px 8px; border-radius:6px; background:transparent; color:var(--c-heading); font-weight:600; font-size:13px; font-variant-numeric:tabular-nums; }
+.balance-detail-link:hover { background:var(--c-primary-l); color:var(--c-primary); }
+.balance-detail-link.balance-low { color:var(--c-danger); }
+.detail-meta { color:var(--c-muted); font-size:13px; margin:4px 0 14px; }
+.detail-body { contain:layout paint; }
+.month-card { border:1px solid var(--c-border); border-radius:10px; margin-bottom:12px; overflow:hidden; background:#fff; contain:layout paint; }
+.month-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; background:var(--c-bg); border-bottom:1px solid var(--c-border); }
+.month-title { font-weight:700; color:var(--c-heading); }
+.month-summary { color:var(--c-muted); font-size:12px; }
+.month-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.month-toggle { padding:4px 10px; font-size:12px; }
+.month-collapsed { color:var(--c-muted); font-size:12px; padding:12px; background:#fff; }
+.tx-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.tx-table th, .tx-table td { font-size:12px; padding:8px 10px; border-bottom:1px solid var(--c-border); }
+.tx-table th:nth-child(1), .tx-table td:nth-child(1) { width:86px; }
+.tx-table th:nth-child(2), .tx-table td:nth-child(2) { width:76px; }
+.tx-table th:nth-child(3), .tx-table td:nth-child(3) { width:82px; text-align:right; }
+.tx-table th:nth-child(4), .tx-table td:nth-child(4) { width:160px; text-align:right; padding-right:22px; }
+.tx-table th:nth-child(5), .tx-table td:nth-child(5) { padding-left:24px; }
+.tx-table tr:last-child td { border-bottom:0; }
+.tx-more { padding:10px 12px; text-align:center; border-top:1px solid var(--c-border-l); background:#fff; }
+.tx-pos { color:var(--c-success); font-weight:600; }
+.tx-neg { color:var(--c-danger); font-weight:600; }
+.tx-zero { color:var(--c-muted); font-weight:600; }
+.empty-detail { color:var(--c-muted); text-align:center; padding:28px 12px; background:var(--c-bg); border-radius:10px; }
+
+/* Login */
+#loginOverlay .modal { text-align:center; }
+#loginOverlay input { text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="modal-overlay" id="loginOverlay" style="display:flex;justify-content:center;align-items:center">
+  <div class="modal" style="min-width:320px;max-width:380px;text-align:center">
+    <h3>公休余额管理后台</h3>
+    <p style="color:#999;font-size:13px;margin-bottom:16px">请输入管理密码</p>
+    <div class="modal-row"><input type="password" id="loginPassword" placeholder="密码" onkeydown="if(event.key==='Enter')doLogin()" style="text-align:center"></div>
+    <div id="loginError" style="color:#ff4d4f;font-size:13px;min-height:18px;margin-bottom:8px"></div>
+    <button class="btn-primary" onclick="doLogin()" style="width:100%;padding:8px">登录</button>
+  </div>
+</div>
+
+<div class="header">
+  <h1>公休余额管理后台</h1>
+  <div class="header-actions">
+    <button class="btn-default" onclick="syncContacts()">同步通讯录</button>
+    <button class="btn-default" onclick="refreshBalances()">刷新余额</button>
+    <button class="btn-primary" onclick="openBatchModal()">月初批量发放</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="stat-cards" id="statCards"></div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('employees')">人员管理</div>
+    <div class="tab" onclick="switchTab('logs')">操作日志</div>
+    <div class="tab" onclick="switchTab('snapshots')">备份记录</div>
+    <div class="tab" id="departedTab" style="display:none" onclick="switchTab('departed')">离职候选</div>
+    <div class="tab" onclick="switchTab('cron')">定时任务</div>
+    <div class="tab" onclick="switchTab('rules')">额度规则</div>
+  </div>
+
+  <div class="panel" id="panel-employees">
+    <div class="toolbar">
+      <input type="text" id="searchInput" placeholder="搜索姓名/userId" oninput="resetEmpPageAndRender()" style="width:200px">
+      <div class="combobox" style="width:180px">
+        <input type="text" id="filterDeptInput" placeholder="筛选部门" autocomplete="off">
+        <div class="combobox-list" id="filterDeptList"></div>
+      </div>
+      <div class="combobox" style="width:160px">
+        <input type="text" id="filterJobInput" placeholder="筛选职位" autocomplete="off">
+        <div class="combobox-list" id="filterJobList"></div>
+      </div>
+      <select id="filterCategory" onchange="resetEmpPageAndRender()">
+        <option value="">全部分类</option>
+        <option value="hourly">小时工</option>
+        <option value="six_day">特殊部门</option>
+        <option value="other">其他</option>
+        <option value="me">本人</option>
+      </select>
+      <div class="toolbar-spacer"></div>
+      <button class="btn-default" onclick="refreshFiltered()" style="padding:8px 14px;font-size:12px">刷新下方余额</button>
+      <button class="btn-primary" onclick="openAdjust()" style="padding:8px 14px;font-size:12px">调整</button>
+    </div>
+    <div class="table-meta"><span id="empCount"></span><span id="empLoadHint"></span></div>
+    <div id="previewBar" style="display:none;background:#fffbe6;border:1px solid #ffe58f;border-radius:4px;padding:10px 12px;margin-bottom:12px;align-items:center;justify-content:space-between">
+      <span id="previewInfo" style="color:#d48806;font-size:13px"></span>
+      <div>
+        <button class="btn-success" onclick="confirmAdjust()" style="padding:4px 14px">✓ 确认执行</button>
+        <button style="background:#f0f0f0;margin-left:8px;padding:4px 14px" onclick="cancelPreview()">✗ 取消</button>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:48px"><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th><th style="width:120px">姓名</th><th>部门</th><th>职位</th><th style="width:90px">分类</th><th class="col-num" style="width:120px">当前余额</th><th class="col-num" style="width:110px">月初默认</th></tr>
+      </thead>
+      <tbody id="empTbody"></tbody>
+    </table>
+    <div class="loading" id="empLoading">加载中...</div>
+  </div>
+
+  <div class="panel" id="panel-logs" style="display:none">
+    <table>
+      <thead><tr><th>时间</th><th>类型</th><th>人数</th><th>变动</th><th>原因</th><th>状态</th><th>明细</th></tr></thead>
+      <tbody id="logTbody"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-snapshots" style="display:none">
+    <div class="toolbar">
+      <button class="btn-default" onclick="loadSnapshots()" style="padding:8px 14px;font-size:12px">刷新</button>
+      <span style="color:var(--c-muted);font-size:12px">备份在余额调整前自动生成,12小时后自动清理</span>
+    </div>
+    <table>
+      <thead><tr><th>批次</th><th>类型</th><th>人数</th><th>创建时间</th><th>过期时间</th><th>操作</th></tr></thead>
+      <tbody id="snapshotTbody"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-departed" style="display:none">
+    <div class="toolbar">
+      <button class="btn-primary" onclick="scanDepartedCandidates()" style="padding:8px 14px;font-size:12px">扫描离职候选</button>
+      <button class="btn-default" onclick="loadDepartedCandidates()" style="padding:8px 14px;font-size:12px">刷新</button>
+      <span style="color:var(--c-muted);font-size:12px">同步通讯录现在只增不减；这里仅生成候选，确认后才真正屏蔽人员</span>
+    </div>
+    <table>
+      <thead><tr><th>姓名</th><th>部门</th><th>职位</th><th>状态</th><th>首次发现</th><th>最近发现</th><th>操作</th></tr></thead>
+      <tbody id="departedTbody"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-cron" style="display:none">
+    <div class="toolbar">
+      <button class="btn-primary" onclick="openTaskModal()" style="padding:8px 14px;font-size:12px">+ 添加任务</button>
+      <button class="btn-default" onclick="loadTasks()" style="padding:8px 14px;font-size:12px">刷新</button>
+      <span style="color:var(--c-muted);font-size:12px">cron格式: 分 时 日 月 周 (如 20 1 * * * = 每天1:20)</span>
+    </div>
+    <table class="cron-table">
+      <thead><tr><th>任务名</th><th>类型</th><th>执行频率</th><th>状态</th><th>上次执行</th><th>结果</th><th>操作</th></tr></thead>
+      <tbody id="cronTbody"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-rules" style="display:none">
+    <h3 style="margin-bottom:12px">额度规则配置</h3>
+    <table class="rules-table">
+      <thead><tr><th>月份类型</th><th>小时工</th><th>特殊部门</th><th>其他</th><th>本人</th><th>操作</th></tr></thead>
+      <tbody id="rulesTbody"></tbody>
+    </table>
+    <p style="margin-top:12px;color:#999;font-size:12px">正常月=3-11月，特殊月=12-2月。特殊月"其他/本人"天数待定，填好后月初批量发放会按此规则累加。</p>
+
+    <div class="future-section">
+      <div class="future-header">
+        <div class="future-title">
+          <h3>次月预扣减情况</h3>
+          <p>月底提交下月公休时会先进入这里，月初额度发放后20分钟自动扣减。</p>
+        </div>
+        <div class="future-actions">
+          <button class="btn-default" onclick="loadFutureReservations()">刷新预扣减</button>
+        </div>
+      </div>
+      <div class="future-summary">
+        <div class="future-metric"><div class="future-metric-label">目标月份</div><div class="future-metric-value" id="futurePeriod">-</div></div>
+        <div class="future-metric"><div class="future-metric-label">待扣人数</div><div class="future-metric-value" id="futurePendingCount">0</div></div>
+        <div class="future-metric"><div class="future-metric-label">待扣天数</div><div class="future-metric-value" id="futurePendingDays">0</div></div>
+        <div class="future-metric is-warn"><div class="future-metric-label">异常/失败</div><div class="future-metric-value" id="futureFailedCount">0</div></div>
+      </div>
+      <div class="future-table-wrap">
+        <table class="rules-table">
+          <thead><tr><th>姓名</th><th>部门</th><th>开始日期</th><th>预扣天数</th><th>状态</th><th>审批标识</th><th>创建时间</th></tr></thead>
+          <tbody id="futureReservationsTbody"><tr><td colspan="7" style="text-align:center;color:#999">暂无数据</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="adjustModal">
+  <div class="modal" style="min-width:480px;max-width:560px">
+    <h3 id="adjTitle">调整余额</h3>
+    <p id="adjTargetInfo" style="color:#666;font-size:13px;margin-bottom:12px"></p>
+    <div class="modal-row"><label>调整天数(正数增加,负数减少)</label><input type="number" id="adjDelta" step="0.5" value="0"></div>
+    <div class="modal-row"><label>原因</label><input type="text" id="adjReason" placeholder="如:月初发放/补偿/扣回"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('adjustModal')" style="background:#f0f0f0">取消</button>
+      <button class="btn-primary" id="adjPreviewBtn" onclick="startPreview()">预览调整</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="min-width:380px;max-width:460px">
+    <h3 id="confirmTitle">确认</h3>
+    <p id="confirmMsg" style="font-size:14px;line-height:1.6;margin-bottom:16px;white-space:pre-line"></p>
+    <div class="modal-actions">
+      <button onclick="closeModal('confirmModal')" style="background:#f0f0f0">取消</button>
+      <button class="btn-primary" id="confirmOkBtn">确认</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="employeeDetailModal" onclick="if(event.target===this)closeModal('employeeDetailModal')">
+  <div class="modal" style="min-width:720px;max-width:920px;max-height:82vh;overflow:auto">
+    <h3 id="empDetailTitle">额度变化明细</h3>
+    <p id="empDetailMeta" class="detail-meta"></p>
+    <div id="empDetailBody" class="detail-body"></div>
+    <div class="modal-actions">
+      <button class="btn-default" onclick="closeModal('employeeDetailModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="batchModal">
+  <div class="modal">
+    <h3>月初批量发放</h3>
+    <div class="modal-row"><label>月份类型</label>
+      <select id="batchType">
+        <option value="normal">正常月(3-11月)</option>
+        <option value="special">特殊月(12-2月)</option>
+      </select>
+    </div>
+    <p style="color:var(--c-warn);font-size:12px;margin:8px 0">此操作会按规则给所有人累加额度，执行前请确认规则配置正确。重复执行会重复累加！</p>
+    <div class="modal-actions">
+      <button class="btn-default" onclick="closeModal('batchModal')">取消</button>
+      <button class="btn-primary" onclick="doBatch()">执行</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="taskModal">
+  <div class="modal" style="min-width:460px">
+    <h3 id="taskModalTitle">添加定时任务</h3>
+    <div class="modal-row"><label>任务名</label><input type="text" id="taskName" placeholder="如:月初发放"></div>
+    <div class="modal-row"><label>任务类型</label>
+      <select id="taskType" onchange="onTaskTypeChange()">
+        <option value="refresh_all">全员余额刷新</option>
+        <option value="cleanup_snapshots">过期快照清理</option>
+        <option value="monthly_assign">月初额度发放</option>
+        <option value="apply_future_reservations">下月预占扣减</option>
+        <option value="annual_dept_reset">特殊部门年度重置</option>
+        <option value="dept_adjust">按部门/人员额度调整</option>
+        <option value="sync_contacts">同步通讯录</option>
+        <option value="departed_scan">离职候选扫描</option>
+      </select>
+    </div>
+    <div class="modal-row"><label>执行频率</label><input type="text" id="taskCron" placeholder="如: 20 1 * * *" oninput="updateCronPreview()" style="font-family:monospace">
+      <div id="cronPreview" style="margin-top:6px;padding:6px 10px;background:var(--c-bg);border-radius:6px;font-size:13px;color:var(--c-primary);display:none"></div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button type="button" class="btn-default" style="padding:3px 10px;font-size:11px" onclick="setCronPreset(this,'0 1 * * *')">每天1:00</button>
+        <button type="button" class="btn-default" style="padding:3px 10px;font-size:11px" onclick="setCronPreset(this,'30 1 * * *')">每天1:30</button>
+        <button type="button" class="btn-default" style="padding:3px 10px;font-size:11px" onclick="setCronPreset(this,'0 * * * *')">每小时</button>
+        <button type="button" class="btn-default" style="padding:3px 10px;font-size:11px" onclick="setCronPreset(this,'0 2 1 * *')">每月1日2:00</button>
+        <a href="javascript:void(0)" onclick="openCronBuilder()" style="font-size:11px;color:var(--c-primary);margin-left:4px">没有符合的？点击自定义</a>
+      </div>
+    </div>
+    <div class="modal-row"><label>配置(JSON,可选)</label><input type="text" id="taskConfig" placeholder='如: {"month_type":"special"}' value="{}" style="display:none"></div>
+    <div id="deptAdjustForm" style="display:none;margin-top:4px">
+      <div style="font-size:13px;font-weight:600;color:var(--c-heading);margin-bottom:8px">调整规则</div>
+      <div class="modal-row"><label>调整天数</label><input type="number" id="adjDelta2" step="0.5" value="1" style="width:120px"><span style="font-size:12px;color:var(--c-muted);margin-left:8px">正数增加,负数减少</span></div>
+      <div class="modal-row"><label>原因</label><input type="text" id="adjReason2" placeholder="如:补发/扣减" value="定时调整" style="width:100%"></div>
+      <div class="modal-row"><label>部门(可多选)</label>
+        <div class="multiselect" id="deptMulti" style="position:relative">
+          <div id="deptTagsDisplay" class="ms-display" onclick="toggleDeptDropdown()" style="min-height:36px;border:1px solid var(--c-border);border-radius:6px;padding:6px 10px;background:var(--c-surface);cursor:pointer;display:flex;flex-wrap:wrap;gap:4px;align-items:center" onmouseover="this.style.borderColor='var(--c-primary)'" onmouseout="this.style.borderColor='var(--c-border)'">
+            <span class="ms-placeholder" style="color:var(--c-muted);font-size:13px">点击选择部门</span>
+          </div>
+          <div id="deptDropdown" class="ms-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;margin-top:2px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:6px;box-shadow:0 8px 24px rgba(15,23,42,.12)">
+            <input type="text" id="deptSearchInput" placeholder="搜索部门..." oninput="filterDeptDropdown()" style="width:100%;border:none;border-bottom:1px solid var(--c-border);padding:9px 12px;font-size:13px;outline:none">
+            <div id="deptDropdownList" style="max-height:200px;overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-row"><label>分类(可多选)</label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <label style="font-weight:400;cursor:pointer"><input type="checkbox" class="adjCat" value="hourly"> 小时工</label>
+          <label style="font-weight:400;cursor:pointer"><input type="checkbox" class="adjCat" value="six_day"> 特殊部门</label>
+          <label style="font-weight:400;cursor:pointer"><input type="checkbox" class="adjCat" value="me"> 本人</label>
+          <label style="font-weight:400;cursor:pointer"><input type="checkbox" class="adjCat" value="other"> 其他</label>
+        </div>
+      </div>
+      <div class="modal-row"><label>指定人员(可选)</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <input type="text" id="empSearch" placeholder="输入姓名搜索..." oninput="searchEmpForAdjust()" style="flex:1">
+        </div>
+        <div id="empSearchResult" style="display:none;max-height:140px;overflow-y:auto;border:1px solid var(--c-border);border-radius:6px;background:var(--c-surface)"></div>
+        <div id="adjSelectedEmps" style="display:none;margin-top:6px;flex-wrap:wrap;gap:4px"></div>
+      </div>
+      <div id="adjPreview" style="margin-top:8px;padding:8px 12px;background:var(--c-bg);border-radius:6px;font-size:12px;color:var(--c-primary);display:none"></div>
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeModal('taskModal')" style="background:#f0f0f0">取消</button>
+      <button class="btn-primary" id="taskSaveBtn" onclick="saveTask()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cronBuilderModal">
+  <div class="modal" style="min-width:480px;max-width:560px">
+    <h3>自定义执行频率</h3>
+    <div class="modal-row" style="margin-bottom:12px"><label>重复方式</label>
+      <select id="cbType" onchange="renderCronBuilder()" style="width:100%">
+        <option value="every_n_min">每隔 N 分钟</option>
+        <option value="every_n_hour">每隔 N 小时</option>
+        <option value="daily">每天</option>
+        <option value="weekly">每周</option>
+        <option value="monthly">每月</option>
+        <option value="yearly">每年</option>
+      </select>
+    </div>
+    <div id="cbFields"></div>
+    <div id="cbResult" style="margin-top:12px;padding:10px 14px;background:var(--c-bg);border-radius:6px;border:1px solid var(--c-border)">
+      <div style="font-size:11px;color:var(--c-muted);margin-bottom:4px">生成的表达式与预览</div>
+      <div id="cbExpr" style="font-family:monospace;font-size:15px;color:var(--c-heading);font-weight:600">- - - - -</div>
+      <div id="cbChinese" style="font-size:13px;color:var(--c-success);margin-top:4px">-</div>
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeModal('cronBuilderModal')" style="background:#f0f0f0">取消</button>
+      <button class="btn-primary" onclick="applyCronBuilder()">确定填入</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var allEmployees = [];
+var currentTab = 'employees';
+var adjUserid = '';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  event.target.classList.add('active');
+  ['employees','logs','snapshots','departed','cron','rules'].forEach(function(p){
+    document.getElementById('panel-'+p).style.display = p===tab ? 'block' : 'none';
+  });
+  if (tab==='logs') loadLogs();
+  if (tab==='snapshots') loadSnapshots();
+  if (tab==='departed') loadDepartedCandidates();
+  if (tab==='cron') loadTasks();
+  if (tab==='rules') loadRules();
+}
+
+function getAuthPassword() {
+  var stored = localStorage.getItem('leaveAdminAuth');
+  if (!stored) return '';
+  try {
+    var obj = JSON.parse(stored);
+    // 30天有效期
+    if (Date.now() - obj.ts > 30 * 24 * 3600 * 1000) {
+      localStorage.removeItem('leaveAdminAuth');
+      return '';
+    }
+    return obj.pwd || '';
+  } catch(e) { return ''; }
+}
+
+function setAuthPassword(pwd) {
+  localStorage.setItem('leaveAdminAuth', JSON.stringify({pwd: pwd, ts: Date.now()}));
+}
+
+function showLogin() {
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('loginPassword').focus();
+}
+
+function doLogin() {
+  var pwd = document.getElementById('loginPassword').value;
+  if (!pwd) { document.getElementById('loginError').textContent = '请输入密码'; return; }
+  fetch('/api/auth', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password: pwd})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if (res.code === 200) {
+        setAuthPassword(pwd);
+        document.getElementById('loginOverlay').style.display = 'none';
+        initApp();
+      } else {
+        document.getElementById('loginError').textContent = res.message || '密码错误';
+      }
+    });
+}
+
+function api(url, method, data) {
+  var opts = { method: method||'GET', headers: {'Content-Type':'application/json', 'X-Auth': getAuthPassword()} };
+  if (data) opts.body = JSON.stringify(data);
+  return fetch(url, opts).then(function(r){
+    if (r.status === 401) { showLogin(); throw new Error('未授权'); }
+    return r.json();
+  });
+}
+
+function initApp() {
+  document.getElementById('loginOverlay').style.display = 'none';
+  detectDepartedFeature();
+  loadFilters();
+  loadEmployees();
+}
+
+function detectDepartedFeature() {
+  api('/api/departed-candidates?status=pending&limit=1').then(function(res){
+    var tab = document.getElementById('departedTab');
+    if (tab && res && res.code === 200) tab.style.display = '';
+  }).catch(function(){
+    var tab = document.getElementById('departedTab');
+    if (tab) tab.style.display = 'none';
+  });
+}
+
+function loadEmployees() {
+  document.getElementById('empLoading').style.display = 'block';
+  var dept = getFilterDept();
+  var job = getFilterJob();
+  var url = '/api/employees';
+  var params = [];
+  if (dept) params.push('dept=' + encodeURIComponent(dept));
+  if (job) params.push('job=' + encodeURIComponent(job));
+  if (params.length) url += '?' + params.join('&');
+  api(url).then(function(res){
+    document.getElementById('empLoading').style.display = 'none';
+    if (res.code === 200) {
+      allEmployees = res.data || [];
+      empVisibleCount = empChunkSize;
+      empRenderedCount = 0;
+      renderEmployees();
+      renderStats();
+    }
+  }).catch(function(){ document.getElementById('empLoading').style.display = 'none'; });
+}
+
+var allDepts = [];
+var allJobs = [];
+
+function loadFilters() {
+  api('/api/depts').then(function(res){
+    allDepts = res.data || [];
+    initCombobox('filterDeptInput', 'filterDeptList', allDepts, '全部部门', function(val){
+      if (val === '') {
+        document.getElementById('filterDeptInput').value = '';
+        document.getElementById('filterDeptInput').dataset.val = '';
+      } else {
+        document.getElementById('filterDeptInput').value = val;
+        document.getElementById('filterDeptInput').dataset.val = val;
+      }
+      loadEmployees();
+    });
+  });
+  api('/api/jobs').then(function(res){
+    allJobs = res.data || [];
+    initCombobox('filterJobInput', 'filterJobList', allJobs, '全部职位', function(val){
+      if (val === '') {
+        document.getElementById('filterJobInput').value = '';
+        document.getElementById('filterJobInput').dataset.val = '';
+      } else {
+        document.getElementById('filterJobInput').value = val;
+        document.getElementById('filterJobInput').dataset.val = val;
+      }
+      loadEmployees();
+    });
+  });
+}
+
+function initCombobox(inputId, listId, options, allLabel, onSelect) {
+  var input = document.getElementById(inputId);
+  var list = document.getElementById(listId);
+  function render(filter) {
+    var items = options.filter(function(o){ return !filter || o.toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
+    var html = '<div class="empty" data-val="">' + allLabel + '</div>';
+    items.forEach(function(o){ html += '<div data-val="'+o+'">'+o+'</div>'; });
+    list.innerHTML = html;
+    list.querySelectorAll('div:not(.empty)').forEach(function(d){
+      d.onclick = function() {
+        onSelect(d.getAttribute('data-val'));
+        list.style.display = 'none';
+      };
+    });
+    list.querySelector('.empty').onclick = function() {
+      onSelect('');
+      list.style.display = 'none';
+    };
+  }
+  input.onfocus = function() { render(input.value); list.style.display = 'block'; };
+  input.oninput = function() { render(input.value); list.style.display = 'block'; input.dataset.val = ''; };
+  input.onblur = function() { setTimeout(function(){ list.style.display = 'none'; }, 150); };
+}
+
+function onFilterChange() {
+  loadEmployees();
+}
+
+function getFilterDept() { return (document.getElementById('filterDeptInput').dataset.val || '').trim(); }
+function getFilterJob() { return (document.getElementById('filterJobInput').dataset.val || '').trim(); }
+
+
+function escapeHtml(v) {
+  return String(v === undefined || v === null ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeAttr(v) { return escapeHtml(v); }
+
+function x100ToDays(v) {
+  var n = parseFloat(v);
+  if (isNaN(n)) n = 0;
+  var d = Math.round((n / 100) * 100) / 100;
+  if (Math.abs(d - Math.round(d)) < 0.0001) return String(Math.round(d));
+  return String(d).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function formatDayValue(v) {
+  var n = parseFloat(v);
+  if (isNaN(n)) n = 0;
+  var d = Math.round(n * 100) / 100;
+  if (Math.abs(d - Math.round(d)) < 0.0001) return String(Math.round(d));
+  return String(d).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function signedDays(v) {
+  var n = parseFloat(v);
+  if (isNaN(n)) n = 0;
+  var sign = n > 0 ? '+' : (n < 0 ? '-' : '');
+  return sign + formatDayValue(Math.abs(n)) + ' 天';
+}
+
+function txLooksLikeDayUnit(r) {
+  var action = r && r.action;
+  var before = Math.abs(parseFloat(r && r.balance_before) || 0);
+  var after = Math.abs(parseFloat(r && r.balance_after) || 0);
+  var days = Math.abs(parseFloat(r && r.days) || 0);
+  return (action === 'reset' || action === 'legacy_reset') && Math.max(before, after, days) <= 20;
+}
+
+function txBalanceDays(r, field) {
+  var v = parseFloat(r && r[field]);
+  if (isNaN(v)) v = 0;
+  return txLooksLikeDayUnit(r) ? v : (v / 100);
+}
+
+function txDeltaDays(r) {
+  return Math.round((txBalanceDays(r, 'balance_after') - txBalanceDays(r, 'balance_before')) * 100) / 100;
+}
+
+function txActionLabel(action) {
+  var map = {deduct:'扣减', refund:'退回', adjust:'后台调整', rollback:'回滚', monthly:'月初发放', reset:'重置'};
+  return map[action] || action || '-';
+}
+
+function txClass(v) {
+  var n = parseFloat(v) || 0;
+  if (n > 0) return 'tx-pos';
+  if (n < 0) return 'tx-neg';
+  return 'tx-zero';
+}
+
+function buildTxMonthGroups(rows) {
+  var byMonth = {};
+  (rows || []).forEach(function(r){
+    var month = (r.created_at || '').substring(0, 7) || '未知月份';
+    if (!byMonth[month]) byMonth[month] = [];
+    byMonth[month].push(r);
+  });
+  return Object.keys(byMonth).sort().reverse().map(function(month){
+    var list = byMonth[month];
+    var chronological = list.slice().sort(function(a,b){ return (a.id||0) - (b.id||0); });
+    var first = chronological[0] || {};
+    var last = chronological[chronological.length - 1] || {};
+    var start = txBalanceDays(first, 'balance_before');
+    var end = txBalanceDays(last, 'balance_after');
+    var delta = Math.round((end - start) * 100) / 100;
+    return {month: month, rows: list, count: list.length, start: start, end: end, delta: delta};
+  });
+}
+
+var empDetailGroups = [];
+var empDetailExpanded = {};
+var empDetailVisibleCount = {};
+var EMP_DETAIL_RENDER_CHUNK = 60;
+
+function renderTxRows(rows, visibleCount) {
+  return rows.slice(0, visibleCount).map(function(r){
+    return '<tr>' +
+      '<td>' + escapeHtml(fmtDate(r.created_at)) + '</td>' +
+      '<td>' + escapeHtml(txActionLabel(r.action)) + '</td>' +
+      '<td class="' + txClass(txDeltaDays(r)) + '">' + escapeHtml(signedDays(txDeltaDays(r))) + '</td>' +
+      '<td class="col-num">' + escapeHtml(formatDayValue(txBalanceDays(r, 'balance_before'))) + ' → ' + escapeHtml(formatDayValue(txBalanceDays(r, 'balance_after'))) + ' 天</td>' +
+      '<td>' + escapeHtml(r.reason || '-') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function renderEmployeeDetailGroups() {
+  if (!empDetailGroups || empDetailGroups.length === 0) return '<div class="empty-detail">暂无额度变化记录</div>';
+  return empDetailGroups.map(function(g, idx){
+    var expanded = !!empDetailExpanded[idx];
+    var visible = empDetailVisibleCount[idx] || EMP_DETAIL_RENDER_CHUNK;
+    var toggleText = expanded ? '收起' : '展开明细';
+    var body;
+    if (expanded) {
+      var detailRows = renderTxRows(g.rows, visible);
+      var more = g.rows.length > visible ? '<div class="tx-more"><button class="btn-default month-toggle" onclick="showMoreTxMonth('+idx+')">继续显示 ' + Math.min(EMP_DETAIL_RENDER_CHUNK, g.rows.length - visible) + ' 条</button></div>' : '';
+      body = '<table class="tx-table"><thead><tr><th>时间</th><th>类型</th><th>变化</th><th>余额</th><th>原因</th></tr></thead><tbody>' + detailRows + '</tbody></table>' + more;
+    } else {
+      body = '<div class="month-collapsed">已折叠明细，点击右侧「展开明细」查看。本月 ' + g.count + ' 条记录不会一次性渲染，避免弹窗卡顿。</div>';
+    }
+    return '<div class="month-card">' +
+      '<div class="month-card-head">' +
+        '<div><span class="month-title">' + escapeHtml(g.month) + '</span><span class="month-summary">　期初 ' + escapeHtml(formatDayValue(g.start)) + ' 天，期末 ' + escapeHtml(formatDayValue(g.end)) + ' 天，净变化 <b class="' + txClass(g.delta) + '">' + escapeHtml(signedDays(g.delta)) + '</b>，共 ' + g.count + ' 条</span></div>' +
+        '<div class="month-actions"><button class="btn-default month-toggle" onclick="toggleTxMonth('+idx+')">' + toggleText + '</button></div>' +
+      '</div>' + body +
+    '</div>';
+  }).join('');
+}
+
+function renderEmployeeDetail(rows) {
+  if (!rows || rows.length === 0) {
+    empDetailGroups = [];
+    empDetailExpanded = {};
+    empDetailVisibleCount = {};
+    return '<div class="empty-detail">暂无额度变化记录</div>';
+  }
+  empDetailGroups = buildTxMonthGroups(rows);
+  empDetailExpanded = {};
+  empDetailVisibleCount = {};
+  if (rows.length <= EMP_DETAIL_RENDER_CHUNK && empDetailGroups.length > 0) {
+    empDetailExpanded[0] = true;
+  }
+  return renderEmployeeDetailGroups();
+}
+
+function toggleTxMonth(idx) {
+  empDetailExpanded[idx] = !empDetailExpanded[idx];
+  if (!empDetailVisibleCount[idx]) empDetailVisibleCount[idx] = EMP_DETAIL_RENDER_CHUNK;
+  document.getElementById('empDetailBody').innerHTML = renderEmployeeDetailGroups();
+}
+
+function showMoreTxMonth(idx) {
+  empDetailVisibleCount[idx] = (empDetailVisibleCount[idx] || EMP_DETAIL_RENDER_CHUNK) + EMP_DETAIL_RENDER_CHUNK;
+  empDetailExpanded[idx] = true;
+  document.getElementById('empDetailBody').innerHTML = renderEmployeeDetailGroups();
+}
+
+function openEmployeeDetail(userid) {
+  var emp = allEmployees.find(function(e){ return e.userid === userid; }) || {userid: userid, name: userid};
+  document.getElementById('empDetailTitle').textContent = (emp.name || userid) + ' 的额度变化明细';
+  document.getElementById('empDetailMeta').textContent = (emp.dept_name || '-') + ' / ' + (emp.job_title || '-') + ' / 当前余额 ' + (emp.current_balance === undefined ? '-' : emp.current_balance + ' 天');
+  document.getElementById('empDetailBody').innerHTML = '<div class="empty-detail">加载中...</div>';
+  document.getElementById('employeeDetailModal').style.display = 'flex';
+  api('/api/leave/transactions?userid=' + encodeURIComponent(userid) + '&limit=300').then(function(res){
+    if (res.code !== 200) {
+      document.getElementById('empDetailBody').innerHTML = '<div class="empty-detail">查询失败</div>';
+      return;
+    }
+    document.getElementById('empDetailBody').innerHTML = renderEmployeeDetail(res.data || []);
+  }).catch(function(){
+    document.getElementById('empDetailBody').innerHTML = '<div class="empty-detail">查询失败</div>';
+  });
+}
+
+function bindBalanceDetailLinks() {
+  document.querySelectorAll('.balance-detail-link').forEach(function(btn){
+    btn.onclick = function(){ openEmployeeDetail(btn.getAttribute('data-userid')); };
+  });
+}
+
+function renderStats() {
+  var total = allEmployees.length;
+  var hourly = allEmployees.filter(function(e){return e.category==='hourly';}).length;
+  var six = allEmployees.filter(function(e){return e.category==='six_day';}).length;
+  var lowBal = allEmployees.filter(function(e){return e.current_balance < 1;}).length;
+  document.getElementById('statCards').innerHTML =
+    '<div class="stat-card"><div class="label">总人数</div><div class="num">'+total+'</div></div>' +
+    '<div class="stat-card"><div class="label">小时工</div><div class="num">'+hourly+'</div></div>' +
+    '<div class="stat-card"><div class="label">职能部门</div><div class="num">'+six+'</div></div>' +
+    '<div class="stat-card stat-warn"><div class="label">余额不足1天</div><div class="num">'+lowBal+'</div></div>';
+}
+
+var isPreviewMode = false;
+var empChunkSize = 120;
+var empVisibleCount = 120;
+var empRenderedCount = 0;
+var empAutoLoadScheduled = false;
+
+function resetEmpPageAndRender() {
+  empVisibleCount = empChunkSize;
+  empRenderedCount = 0;
+  renderEmployees();
+}
+
+function updateEmpLoadHint(total, shown) {
+  var hint = document.getElementById('empLoadHint');
+  if (!hint) return;
+  if (!total) { hint.textContent = ''; return; }
+  hint.textContent = shown < total ? '向下滚动自动加载更多' : '已显示全部';
+}
+
+function renderEmployeeRow(e) {
+  var catTag = {'hourly':'<span class="tag tag-hourly">小时工</span>','six_day':'<span class="tag tag-six">职能部门</span>','me':'<span class="tag tag-me">本人</span>','other':'<span class="tag tag-other">其他</span>'}[e.category] || '';
+  var balClass = e.current_balance < 1 ? 'balance-low' : 'balance-normal';
+  return '<tr>' +
+    '<td><input type="checkbox" class="emp-check" value="'+escapeAttr(e.userid)+'"></td>' +
+    '<td>'+escapeHtml(e.name||e.userid)+'</td>' +
+    '<td>'+escapeHtml(e.dept_name||'-')+'</td>' +
+    '<td>'+escapeHtml(e.job_title||'-')+'</td>' +
+    '<td>'+catTag+'</td>' +
+    '<td class="col-num"><button type="button" class="balance-detail-link '+balClass+'" data-userid="'+escapeAttr(e.userid)+'">'+escapeHtml(e.current_balance)+' 天</button></td>' +
+    '<td class="col-num">'+escapeHtml(e.default_quota)+' 天</td>' +
+    '</tr>';
+}
+
+function appendEmployeeRows(list, start, end) {
+  var tbody = document.getElementById('empTbody');
+  var html = list.slice(start, end).map(renderEmployeeRow).join('');
+  if (html) tbody.insertAdjacentHTML('beforeend', html);
+  empRenderedCount = end;
+  bindBalanceDetailLinks();
+}
+
+function maybeLoadMoreEmployees() {
+  if (isPreviewMode) return;
+  var list = getFilteredEmployees();
+  var total = list.length;
+  if (empRenderedCount >= total) return;
+  var doc = document.documentElement;
+  var nearBottom = (window.innerHeight + window.scrollY) >= (doc.scrollHeight - 520);
+  if (!nearBottom) return;
+  var nextEnd = Math.min(empRenderedCount + empChunkSize, total);
+  appendEmployeeRows(list, empRenderedCount, nextEnd);
+  document.getElementById('empCount').textContent = '共 ' + total + ' 人，显示 1-' + nextEnd;
+  updateEmpLoadHint(total, nextEnd);
+}
+
+function scheduleMaybeLoadMoreEmployees() {
+  if (empAutoLoadScheduled) return;
+  empAutoLoadScheduled = true;
+  requestAnimationFrame(function(){
+    empAutoLoadScheduled = false;
+    maybeLoadMoreEmployees();
+  });
+}
+
+window.addEventListener('scroll', scheduleMaybeLoadMoreEmployees, {passive:true});
+
+var NORMAL_HEAD = '<th style="width:48px"><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th><th style="width:120px">姓名</th><th>部门</th><th>职位</th><th style="width:90px">分类</th><th class="col-num" style="width:120px">当前余额</th><th class="col-num" style="width:110px">月初默认</th>';
+var PREVIEW_HEAD = '<th>姓名</th><th>部门</th><th>职位</th><th>分类</th><th>余额调整(当前→调整后)</th>';
+
+function setHead(html) { document.querySelector('#panel-employees thead tr').innerHTML = html; }
+
+function getFilteredEmployees() {
+  var search = (document.getElementById('searchInput').value||'').toLowerCase();
+  var cat = document.getElementById('filterCategory').value;
+  return allEmployees.filter(function(e){
+    var match = !search || (e.name||'').toLowerCase().indexOf(search)>=0 || (e.dept_name||'').toLowerCase().indexOf(search)>=0 || (e.userid||'').toLowerCase().indexOf(search)>=0;
+    var catMatch = !cat || e.category === cat;
+    return match && catMatch;
+  });
+}
+
+function renderEmployees() {
+  if (isPreviewMode) { renderPreviewTable(); return; }
+  setHead(NORMAL_HEAD);
+  document.getElementById('previewBar').style.display = 'none';
+  var list = getFilteredEmployees();
+  var total = list.length;
+  var endIdx = Math.min(empVisibleCount, total);
+  empRenderedCount = 0;
+  document.getElementById('empTbody').innerHTML = '';
+  if (!total) {
+    document.getElementById('empCount').textContent = '0 人';
+    updateEmpLoadHint(0, 0);
+    document.getElementById('empTbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:20px">暂无数据，请先同步通讯录</td></tr>';
+  } else {
+    appendEmployeeRows(list, 0, endIdx);
+    document.getElementById('empCount').textContent = '共 ' + total + ' 人，显示 1-' + endIdx;
+    updateEmpLoadHint(total, endIdx);
+  }
+  var ca = document.getElementById('checkAll');
+  if (ca) ca.checked = false;
+}
+
+function toggleAll(src) {
+  document.querySelectorAll('.emp-check').forEach(function(cb){ cb.checked = src.checked; });
+}
+
+function getCheckedUserids() {
+  var ids = [];
+  document.querySelectorAll('.emp-check:checked').forEach(function(cb){ ids.push(cb.value); });
+  return ids;
+}
+
+function toast(msg, type, duration) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (type||'');
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function(){ t.style.display='none'; }, duration || 3000);
+}
+
+function confirmDialog(msg, onOk, title) {
+  document.getElementById('confirmTitle').textContent = title || '确认操作';
+  document.getElementById('confirmMsg').textContent = msg;
+  var btn = document.getElementById('confirmOkBtn');
+  btn.onclick = function() {
+    closeModal('confirmModal');
+    if (onOk) onOk();
+  };
+  document.getElementById('confirmModal').style.display = 'flex';
+}
+
+var adjTargetList = [];
+var adjPreviewData = null;
+
+function getAdjustTargets() {
+  var checked = getCheckedUserids();
+  if (checked.length > 0) {
+    return allEmployees.filter(function(e){ return checked.indexOf(e.userid) >= 0; });
+  }
+  return getFilteredEmployees();
+}
+
+function openAdjust() {
+  var targets = getAdjustTargets();
+  if (targets.length === 0) { toast('没有可调整的人员，请先筛选或勾选', 'error'); return; }
+  adjTargetList = targets.map(function(e){ return e.userid; });
+  adjPreviewData = null;
+  document.getElementById('adjTitle').textContent = '调整余额 (共' + targets.length + '人)';
+  var names = targets.slice(0,5).map(function(e){return e.name;}).join('、');
+  var more = targets.length > 5 ? ' 等' + targets.length + '人' : '';
+  document.getElementById('adjTargetInfo').textContent = '调整对象: ' + names + more;
+  document.getElementById('adjDelta').value = 0;
+  document.getElementById('adjReason').value = '';
+  document.getElementById('adjustModal').style.display = 'flex';
+}
+
+function startPreview() {
+  var delta = parseFloat(document.getElementById('adjDelta').value);
+  var reason = document.getElementById('adjReason').value;
+  if (isNaN(delta) || delta === 0) { toast('请输入非零调整天数', 'error'); return; }
+  if (!reason) { toast('请填写调整原因', 'error'); return; }
+  var btn = document.getElementById('adjPreviewBtn');
+  btn.disabled = true;
+  btn.textContent = '获取中(' + adjTargetList.length + '人)...';
+  toast('正在获取最新余额...', '');
+  api('/api/fetch-balances', 'POST', {userids: adjTargetList}).then(function(res){
+    btn.disabled = false;
+    btn.textContent = '预览调整';
+    if (res.code !== 200) { toast('获取余额失败', 'error'); return; }
+    adjPreviewData = {balances: res.data.balances || {}, delta: delta, failed: res.data.failed || [], reason: reason};
+    closeModal('adjustModal');
+    isPreviewMode = true;
+    renderPreviewTable();
+    showPreviewBar();
+  });
+}
+
+function renderPreviewTable() {
+  setHead(PREVIEW_HEAD);
+  var hint = document.getElementById('empLoadHint');
+  if (hint) hint.textContent = '';
+  var delta = adjPreviewData.delta;
+  var balances = adjPreviewData.balances;
+  var deltaStr = delta > 0 ? ('+' + delta) : ('' + delta);
+  var html = '';
+  adjTargetList.forEach(function(uid){
+    var emp = allEmployees.find(function(e){return e.userid===uid;});
+    var name = emp ? emp.name : uid;
+    var dept = emp ? (emp.dept_name||'-') : '-';
+    var job = emp ? (emp.job_title||'-') : '-';
+    var catTag = emp ? ({'hourly':'<span class="tag tag-hourly">小时工</span>','six_day':'<span class="tag tag-six">特殊部门</span>','me':'<span class="tag tag-me">本人</span>','other':'<span class="tag tag-other">其他</span>'}[emp.category]||'') : '';
+    var cur = balances[uid];
+    if (cur === undefined) {
+      html += '<tr><td>'+name+'</td><td>'+dept+'</td><td>'+job+'</td><td>'+catTag+'</td><td style="color:#ff4d4f">查询失败,将跳过</td></tr>';
+      return;
+    }
+    var after = cur + delta;
+    var willZero = after < 0;
+    if (willZero) after = 0;
+    var afterClass = after < 1 ? 'color:#ff4d4f' : 'color:#52c41a';
+    var warn = willZero ? ' <span style="color:#faad14;font-size:11px">(余额不足,归零)</span>' : '';
+    html += '<tr><td>'+name+'</td><td>'+dept+'</td><td>'+job+'</td><td>'+catTag+'</td><td><b>'+cur+'天</b> → <b style="'+afterClass+'">'+after+'天</b> <span style="color:#999;font-size:11px">('+deltaStr+')</span>'+warn+'</td></tr>';
+  });
+  document.getElementById('empTbody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px">无数据</td></tr>';
+}
+
+function showPreviewBar() {
+  var delta = adjPreviewData.delta;
+  var deltaStr = delta > 0 ? ('+' + delta) : ('' + delta);
+  var n = adjTargetList.length;
+  var failed = adjPreviewData.failed.length;
+  document.getElementById('previewInfo').textContent = '预览: ' + n + '人将调整(' + deltaStr + '天)' + (failed > 0 ? '，其中'+failed+'人查询失败将跳过' : '');
+  document.getElementById('previewBar').style.display = 'flex';
+}
+
+function confirmAdjust() {
+  var delta = adjPreviewData.delta;
+  var reason = adjPreviewData.reason;
+  var deltaStr = delta > 0 ? ('+' + delta) : ('' + delta);
+  confirmDialog('确认对 ' + adjTargetList.length + ' 人执行余额调整(' + deltaStr + '天)？\n原因: ' + reason + '\n此操作会记录日志并生成备份(12小时后自动清理)。', function(){
+    toast('正在调整 ' + adjTargetList.length + ' 人余额...', '');
+    api('/api/adjust-batch', 'POST', {userids: adjTargetList, delta: delta, reason: reason}).then(function(res){
+      if (res.code === 200) {
+        var d = res.data;
+        toast('调整完成: 成功' + d.success + ' 失败' + d.failed, d.failed > 0 ? 'error' : 'success', 5000);
+        exitPreviewMode();
+        loadEmployees();
+      } else {
+        toast('调整失败', 'error');
+      }
+    });
+  }, '确认调整');
+}
+
+function cancelPreview() {
+  exitPreviewMode();
+  renderEmployees();
+  toast('已取消调整', '', 2000);
+}
+
+function exitPreviewMode() {
+  isPreviewMode = false;
+  adjPreviewData = null;
+  document.getElementById('previewBar').style.display = 'none';
+}
+
+function refreshFiltered() {
+  var userids = getCheckedUserids();
+  var list;
+  if (userids.length > 0) {
+    list = allEmployees.filter(function(e){ return userids.indexOf(e.userid) >= 0; });
+  } else {
+    list = getFilteredEmployees();
+  }
+  if (list.length === 0) { toast('无刷新对象', 'error'); return; }
+  var uidList = list.map(function(e){return e.userid;});
+  var tip = userids.length > 0 ? ('勾选 ' + list.length + ' 人') : ('筛选 ' + list.length + ' 人');
+  var names = list.slice(0,5).map(function(e){return e.name;}).join('、');
+  var more = list.length > 5 ? ' 等' + list.length + '人' : '';
+  confirmDialog('确认对 ' + names + more + ' 的余额进行刷新吗？\n(' + tip + '，约' + Math.ceil(list.length*0.4) + '秒)', function(){
+    toast('刷新' + tip + '中...', '');
+    api('/api/refresh-filtered', 'POST', {userids: uidList}).then(function(res){
+      if (res.code === 200) {
+        toast('刷新完成: 成功' + res.data.success + ' 失败' + res.data.failed, 'success', 5000);
+        loadEmployees();
+      } else { toast('刷新失败', 'error'); }
+    });
+  }, '刷新余额');
+}
+
+function doAdjust() {
+  // 旧的单人调整已废弃,改用 doBatchAdjust
+}
+
+function syncContacts() {
+  confirmDialog('确认同步钉钉通讯录？同步会更新人员信息但保留已屏蔽人员状态。', function(){
+    toast('同步中，请稍候...', '');
+    api('/api/sync', 'POST').then(function(res){
+      if (res.code === 200) { toast(res.message, 'success', 5000); loadEmployees(); }
+      else { toast(res.message, 'error', 5000); }
+    });
+  }, '同步通讯录');
+}
+
+var refreshTimer = null;
+var refreshTaskId = null;
+function refreshBalances() {
+  if (refreshTaskId) { toast('刷新进行中，请等待', 'error'); return; }
+  confirmDialog('确认刷新所有人余额？耗时约5分钟，期间可查看进度。', function(){
+    api('/api/refresh-balances', 'POST').then(function(res){
+      if (res.code === 200) {
+        refreshTaskId = res.data.task_id;
+        toast('刷新已启动', 'success');
+        pollRefresh();
+      }
+    });
+  }, '刷新全员余额');
+}
+function pollRefresh() {
+  refreshTimer = setInterval(function(){
+    api('/api/refresh-progress?task_id=' + refreshTaskId).then(function(res){
+      var p = res.data || {};
+      if (p.status === 'unknown') return;
+      var pct = p.total > 0 ? Math.round(p.done / p.total * 100) : 0;
+      var msg = '刷新中 ' + pct + '% (' + p.done + '/' + p.total + ') ' + (p.current||'');
+      toast(msg, '');
+      if (p.status === 'done') {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+        refreshTaskId = null;
+        toast('刷新完成: 成功' + p.success + ' 失败' + p.failed, 'success');
+        loadEmployees();
+      }
+    });
+  }, 2000);
+}
+
+function openBatchModal() { document.getElementById('batchModal').style.display = 'flex'; }
+
+function doBatch() {
+  var mt = document.getElementById('batchType').value;
+  var mtLabel = mt === 'normal' ? '正常月(3-11月)' : '特殊月(12-2月)';
+  confirmDialog('确认执行月初批量发放(' + mtLabel + ')？\n此操作会按规则给所有人累加额度,不可撤销！\n重复执行会重复累加！', function(){
+    toast('批量发放中...', '');
+    closeModal('batchModal');
+    api('/api/batch-monthly', 'POST', {month_type: mt}).then(function(res){
+      if (res.code === 200) {
+        toast('完成: 成功'+res.data.success+' 失败'+res.data.failed+' 跳过'+res.data.skipped, 'success', 6000);
+        loadEmployees();
+      } else { toast('失败', 'error'); }
+    });
+  }, '月初批量发放');
+}
+
+function loadLogs() {
+  api('/api/quota-logs').then(function(res){
+    if (res.code !== 200) return;
+    var logs = res.data || [];
+    // 按 batch_id 分组(无batch_id的独立成组)
+    var groups = {};
+    var order = [];
+    logs.forEach(function(l){
+      var key = l.batch_id || ('single_'+l.id);
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(l);
+    });
+    var html = order.map(function(key){
+      var g = groups[key];
+      var first = g[0];
+      var isBatch = g.length > 1;
+      var allSuccess = g.every(function(x){return x.status==='success';});
+      var hasFail = g.some(function(x){return x.status==='failed';});
+      var statusTag = hasFail ? '<span style="color:var(--c-danger)">部分失败</span>' : (allSuccess ? '<span style="color:var(--c-success)">成功</span>' : '<span style="color:var(--c-warn)">进行中</span>');
+      var delta = first.delta;
+      var deltaStr = (delta>0?'+':'')+delta;
+      var typeLabel = isBatch ? ('批量调整('+g.length+'人)') : '单人调整';
+      var summary = '<tr style="cursor:pointer" onclick="toggleLogDetail(\''+key+'\')">' +
+        '<td>'+fmtDate(first.created_at)+'</td>' +
+        '<td>'+typeLabel+'</td>' +
+        '<td class="col-num">'+g.length+'</td>' +
+        '<td class="col-num">'+deltaStr+' 天</td>' +
+        '<td>'+first.reason+'</td>' +
+        '<td>'+statusTag+'</td>' +
+        '<td><span style="color:var(--c-primary);font-size:12px;cursor:pointer">展开 ▾</span> <button class="btn-danger" style="padding:3px 9px;font-size:11px;margin-left:8px" onclick="event.stopPropagation();rollbackFromLog(\''+key+'\')">回滚</button></td></tr>';
+      var detail = g.map(function(l){
+        var st = l.status==='success'?'<span style="color:var(--c-success)">✓</span>':'<span style="color:var(--c-danger)">✗</span>';
+        return '<tr class="log-detail-'+key+'" style="display:none;background:var(--c-bg)"><td colspan="7" style="padding:6px 24px;color:var(--c-body);font-size:12px">'+st+' <span style="color:var(--c-muted);font-family:monospace">'+fmtDate(l.created_at)+'</span> '+l.name+': '+l.old_value+'天 → '+l.new_value+'天 ('+deltaStr+')'+(l.error_msg?' <span style="color:var(--c-danger)">'+l.error_msg+'</span>':'')+'</td></tr>';
+      }).join('');
+      return summary + detail;
+    }).join('');
+    document.getElementById('logTbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#999;padding:20px">暂无日志</td></tr>';
+  });
+}
+
+function toggleLogDetail(key) {
+  document.querySelectorAll('.log-detail-'+key).forEach(function(tr){
+    tr.style.display = tr.style.display === 'none' ? 'table-row' : 'none';
+  });
+}
+
+function rollbackFromLog(batchId) {
+  confirmDialog('确认回滚此批次操作？\n\n回滚会把涉及人员的余额恢复到此操作前的值(从备份读取)。\n回滚本身也会生成新的备份和日志,可再次回滚。\n\n注意: 备份12小时后自动清理,过期后无法回滚。', function(){
+    toast('正在回滚...', '');
+    api('/api/rollback-adjust', 'POST', {batch_id: batchId}).then(function(res){
+      if (res.code === 200) {
+        var d = res.data;
+        if (d.total === 0) {
+          toast('回滚失败: ' + (d.message || '备份不存在'), 'error', 6000);
+          return;
+        }
+        toast('回滚完成: 成功' + d.success + ' 失败' + d.failed, d.failed > 0 ? 'error' : 'success', 6000);
+        loadLogs();
+      } else {
+        toast('回滚失败', 'error');
+      }
+    });
+  }, '回滚操作');
+}
+
+function loadSnapshots() {
+  api('/api/snapshots').then(function(res){
+    if (res.code !== 200) return;
+    var snaps = res.data || [];
+    var typeLabel = {'pre_adjust':'单人调整前','pre_batch_adjust':'批量调整前','pre_monthly':'月初发放前','pre_operate':'操作前'};
+    var html = snaps.map(function(s){
+      return '<tr>' +
+        '<td style="font-size:12px">'+s.batch_id.substring(0,28)+'</td>' +
+        '<td>'+(typeLabel[s.snapshot_type]||s.snapshot_type)+'</td>' +
+        '<td>'+s.cnt+'</td>' +
+        '<td>'+fmtDate(s.created_at)+'</td>' +
+        '<td>'+(s.expires_at? fmtDate(s.expires_at) : '永久')+'</td>' +
+        '<td><button class="btn-default" style="padding:4px 10px;font-size:11px" onclick="viewSnapshot(\''+s.batch_id+'\')">查看明细</button></td>' +
+        '</tr>';
+    }).join('');
+    document.getElementById('snapshotTbody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px">暂无备份(余额调整时会自动生成,12小时后清理)</td></tr>';
+  });
+}
+
+function viewSnapshot(batchId) {
+  api('/api/snapshots/'+batchId).then(function(res){
+    if (res.code !== 200) { toast('查询失败', 'error'); return; }
+    var detail = res.data || [];
+    var html = detail.map(function(d){
+      return d.name + ': ' + d.balance + '天';
+    }).join('\n');
+    document.getElementById('confirmTitle').textContent = '备份明细';
+    document.getElementById('confirmMsg').textContent = '批次:'+batchId.substring(0,28)+'...\n共'+detail.length+'人:\n\n'+html;
+    var okBtn = document.getElementById('confirmOkBtn');
+    okBtn.style.display = 'none';
+    okBtn.onclick = function(){ closeModal('confirmModal'); okBtn.style.display='inline-block'; };
+    document.querySelector('#confirmModal button[style*="f0f0f0"]').textContent = '关闭';
+    document.querySelector('#confirmModal button[style*="f0f0f0"]').onclick = function(){ closeModal('confirmModal'); okBtn.style.display='inline-block'; };
+    document.getElementById('confirmModal').style.display = 'flex';
+  });
+}
+
+var editTaskId = null;
+var taskTypeLabel = {'refresh_all':'全员余额刷新','cleanup_snapshots':'过期快照清理','monthly_assign':'月初额度发放','apply_future_reservations':'下月预占扣减','annual_dept_reset':'特殊部门年度重置','dept_adjust':'按部门/人员调整','sync_contacts':'同步通讯录','departed_scan':'离职候选扫描','push_dingtalk':'推送钉钉同步'};
+
+function pad2(n){ return n<10?'0'+n:''+n; }
+
+function fmtDate(s) {
+  if (!s) return '-';
+  try {
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return s;
+    return pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+pad2(d.getHours())+':'+pad2(d.getMinutes());
+  } catch(e){ return s; }
+}
+
+function cronToChinese(expr) {
+  if (!expr) return '-';
+  var p = expr.trim().split(/\s+/);
+  if (p.length !== 5) return expr;
+  var min = p[0], hr = p[1], day = p[2], mon = p[3], dow = p[4];
+  // 解析小时
+  var hh;
+  if (hr === '*') hh = null;
+  else if (hr.indexOf('*/') === 0) hh = '每'+hr.slice(2)+'小时';
+  else hh = pad2(parseInt(hr));
+  // 解析分钟
+  var mm;
+  if (min === '*') mm = null;
+  else if (min.indexOf('*/') === 0) mm = '每'+min.slice(2)+'分';
+  else mm = pad2(parseInt(min));
+  // 组合时间描述
+  var time;
+  if (hh === null && mm === null) time = '每小时';
+  else if (hh === null) time = '每小时'+(mm?' '+mm:'');
+  else if (typeof hh === 'string' && hh.indexOf('每')===0) time = hh;
+  else time = hh + ':' + (mm||'00');
+  // 每小时整点
+  if (min==='*' && hr==='*' && day==='*' && mon==='*' && dow==='*') return '每小时';
+  if (min==='0' && hr==='*' && day==='*' && mon==='*' && dow==='*') return '每小时整点';
+  // 每天类型
+  if (day==='*' && mon==='*' && dow==='*') return '每天 '+time;
+  // 每月N日
+  if (day!=='*' && mon==='*' && dow==='*') return '每月'+parseInt(day)+'日 '+time;
+  // 每年某月某日(指定月份)
+  var monMap = {'1':'1月','2':'2月','3':'3月','4':'4月','5':'5月','6':'6月','7':'7月','8':'8月','9':'9月','10':'10月','11':'11月','12':'12月'};
+  if (day!=='*' && mon!=='*') return '每年'+(monMap[mon]||mon)+parseInt(day)+'日 '+time;
+  // 每周
+  var dowMap = {'0':'日','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'日'};
+  if (day==='*' && mon==='*' && dow!=='*') {
+    var w = dowMap[dow] || dow;
+    return '每周'+w+' '+time;
+  }
+  return expr;
+}
+
+function updateCronPreview() {
+  var v = document.getElementById('taskCron').value.trim();
+  var el = document.getElementById('cronPreview');
+  if (!v) { el.style.display='none'; el.textContent=''; return; }
+  var cn = cronToChinese(v);
+  el.textContent = '执行时机: ' + cn;
+  el.style.display = cn === v ? 'none' : 'block';
+}
+
+function setCronPreset(btn, expr) {
+  document.getElementById('taskCron').value = expr;
+  updateCronPreview();
+}
+
+// ========== cron 自定义生成器 ==========
+function onTaskTypeChange() {
+  var t = document.getElementById('taskType').value;
+  var cfgInput = document.getElementById('taskConfig');
+  var form = document.getElementById('deptAdjustForm');
+  if (t === 'dept_adjust') {
+    cfgInput.style.display = 'none';
+    form.style.display = 'block';
+    renderDeptCheckboxes();
+    updateAdjPreview();
+  } else if (t === 'monthly_assign') {
+    cfgInput.style.display = 'none';
+    cfgInput.value = '{"month_type":"auto"}';
+    form.style.display = 'none';
+  } else if (t === 'departed_scan') {
+    cfgInput.style.display = 'none';
+    cfgInput.value = '{"auto_confirm":false}';
+    form.style.display = 'none';
+  } else {
+    cfgInput.style.display = 'none';
+    cfgInput.value = '{}';
+    form.style.display = 'none';
+  }
+}
+
+var adjAllDepts = [];
+var adjSelectedDepts = new Set();
+var adjSelectedEmps = [];
+
+function renderDeptCheckboxes() {
+  var depts = {};
+  allEmployees.forEach(function(e){ if(e.dept_name) depts[e.dept_name]=1; });
+  adjAllDepts = Object.keys(depts).sort();
+  renderDeptDropdownList();
+  renderDeptTags();
+}
+
+function toggleDeptDropdown() {
+  var dd = document.getElementById('deptDropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+  if (dd.style.display === 'block') {
+    document.getElementById('deptSearchInput').value = '';
+    renderDeptDropdownList();
+    setTimeout(function(){ document.getElementById('deptSearchInput').focus(); }, 50);
+  }
+}
+
+function filterDeptDropdown() {
+  renderDeptDropdownList();
+}
+
+function renderDeptDropdownList() {
+  var q = (document.getElementById('deptSearchInput').value||'').trim().toLowerCase();
+  var list = adjAllDepts.filter(function(d){ return !q || d.toLowerCase().indexOf(q) >= 0; });
+  var box = document.getElementById('deptDropdownList');
+  if (!list.length) { box.innerHTML='<div style="padding:12px;color:var(--c-muted);font-size:12px;text-align:center">无匹配部门</div>'; return; }
+  box.innerHTML = list.map(function(d){
+    var checked = adjSelectedDepts.has(d) ? '✓ ' : '';
+    return '<div class="ms-option" onclick="toggleDeptSel(this,\''+d.replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\')" onmouseover="this.style.background=\'var(--c-bg)\'" onmouseout="this.style.background=\'\'" style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:6px">'+checked+d+'</div>';
+  }).join('');
+}
+
+function toggleDeptSel(el, dept) {
+  if (adjSelectedDepts.has(dept)) adjSelectedDepts.delete(dept);
+  else adjSelectedDepts.add(dept);
+  renderDeptDropdownList();
+  renderDeptTags();
+  updateAdjPreview();
+}
+
+function renderDeptTags() {
+  var box = document.getElementById('deptTagsDisplay');
+  var depts = Array.from(adjSelectedDepts);
+  if (!depts.length) {
+    box.innerHTML = '<span class="ms-placeholder" style="color:var(--c-muted);font-size:13px">点击选择部门</span>';
+    return;
+  }
+  box.innerHTML = depts.map(function(d){
+    return '<span style="background:var(--c-primary-l);color:var(--c-primary);padding:3px 10px;border-radius:4px;font-size:12px;display:inline-flex;align-items:center;gap:6px">'+d+' <a href="javascript:void(0)" onclick="event.stopPropagation();removeDeptTag(\''+d.replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\')" style="color:var(--c-muted);text-decoration:none;font-size:14px;line-height:1">×</a></span>';
+  }).join('');
+}
+
+function removeDeptTag(dept) {
+  adjSelectedDepts.delete(dept);
+  renderDeptDropdownList();
+  renderDeptTags();
+  updateAdjPreview();
+}
+
+// 点击外部关闭下拉
+document.addEventListener('click', function(e){
+  var dd = document.getElementById('deptDropdown');
+  var multi = document.getElementById('deptMulti');
+  if (dd && multi && dd.style.display==='block' && !multi.contains(e.target)) {
+    dd.style.display='none';
+  }
+});
+
+function searchEmpForAdjust() {
+  var q = (document.getElementById('empSearch').value||'').trim();
+  var box = document.getElementById('empSearchResult');
+  if (!q) { box.style.display='none'; box.innerHTML=''; return; }
+  var matches = allEmployees.filter(function(e){
+    return (e.name||'').indexOf(q) >= 0 || (e.userid||'').indexOf(q) >= 0;
+  }).slice(0, 30);
+  if (!matches.length) { box.innerHTML='<div style="padding:8px;color:var(--c-muted);font-size:12px">无匹配人员</div>'; box.style.display='block'; return; }
+  box.innerHTML = matches.map(function(e){
+    var escName = (e.name||'').replace(/'/g,"\\'");
+    return '<div style="padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--c-border)" onmouseover="this.style.background=\'var(--c-bg)\'" onmouseout="this.style.background=\'\'" onclick="addSelectedEmp(\''+e.userid+'\',\''+escName+'\')">'+e.name+' <span style="color:var(--c-muted);font-size:11px">'+(e.dept_name||'')+(e.is_disabled?' (已屏蔽)':'')+'</span></div>';
+  }).join('');
+  box.style.display='block';
+}
+
+function addSelectedEmp(uid, name) {
+  if (adjSelectedEmps.some(function(e){return e.userid===uid;})) { toast('该人员已添加', 'error'); return; }
+  adjSelectedEmps.push({userid:uid, name:name});
+  document.getElementById('empSearch').value='';
+  document.getElementById('empSearchResult').style.display='none';
+  renderSelectedEmps();
+  updateAdjPreview();
+}
+
+function removeSelectedEmp(uid) {
+  adjSelectedEmps = adjSelectedEmps.filter(function(e){return e.userid!==uid;});
+  renderSelectedEmps();
+  updateAdjPreview();
+}
+
+function renderSelectedEmps() {
+  var box = document.getElementById('adjSelectedEmps');
+  if (!adjSelectedEmps.length) { box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='flex';
+  box.innerHTML = adjSelectedEmps.map(function(e){
+    return '<span style="background:var(--c-primary-l);color:var(--c-primary);padding:3px 10px;border-radius:4px;font-size:12px;display:inline-flex;align-items:center;gap:6px">'+e.name+' <a href="javascript:void(0)" onclick="removeSelectedEmp(\''+e.userid+'\')" style="color:var(--c-muted);text-decoration:none;font-size:14px">×</a></span>';
+  }).join('');
+}
+
+function updateAdjPreview() {
+  var cfg = collectDeptAdjustConfig();
+  var pv = document.getElementById('adjPreview');
+  if (!cfg.depts.length && !cfg.categories.length && !cfg.userids.length) {
+    pv.style.display='none';
+    return;
+  }
+  var parts = [];
+  if (cfg.depts.length) parts.push('部门:'+cfg.depts.join(','));
+  if (cfg.categories.length) parts.push('分类:'+cfg.categories.join(','));
+  if (cfg.userids.length) parts.push('指定人员:'+cfg.userids.length+'人');
+  pv.textContent = '将对 [' + parts.join(' + ') + '] 调整 ' + cfg.delta + ' 天';
+  pv.style.display = 'block';
+}
+
+function collectDeptAdjustConfig() {
+  var depts = Array.from(adjSelectedDepts);
+  var cats = [];
+  document.querySelectorAll('.adjCat:checked').forEach(function(c){cats.push(c.value);});
+  var userids = adjSelectedEmps.map(function(e){return e.userid;});
+  var delta = parseFloat(document.getElementById('adjDelta2').value) || 0;
+  var reason = document.getElementById('adjReason2').value || '定时调整';
+  return {"depts":depts, "categories":cats, "userids":userids, "delta":delta, "reason":reason};
+}
+
+function openCronBuilder() {
+  document.getElementById('cronBuilderModal').style.display = 'flex';
+  renderCronBuilder();
+}
+
+// 生成0-59/0-23的option
+function numOptions(from, to, sel) {
+  var h = '';
+  for (var i = from; i <= to; i++) {
+    h += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+pad2(i)+'</option>';
+  }
+  return h;
+}
+
+function renderCronBuilder() {
+  var type = document.getElementById('cbType').value;
+  var f = document.getElementById('cbFields');
+  var hh = '';
+  if (type === 'every_n_min') {
+    hh = '<label>间隔分钟数</label><input type="number" id="cbN" value="30" min="1" max="59" oninput="updateCronBuilderResult()" style="width:120px">';
+  } else if (type === 'every_n_hour') {
+    hh = '<label>间隔小时数</label><input type="number" id="cbN" value="2" min="1" max="23" oninput="updateCronBuilderResult()" style="width:120px"><div style="margin-top:6px"><label>分钟</label><select id="cbMin" onchange="updateCronBuilderResult()" style="width:120px">'+numOptions(0,59,0)+'</select></div>';
+  } else if (type === 'daily') {
+    hh = '<div style="display:flex;gap:12px"><div><label>时</label><select id="cbHour" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,23,1)+'</select></div><div><label>分</label><select id="cbMin" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,59,0)+'</select></div></div>';
+  } else if (type === 'weekly') {
+    var days = [['1','周一'],['2','周二'],['3','周三'],['4','周四'],['5','周五'],['6','周六'],['0','周日']];
+    var chk = days.map(function(d){return '<label style="display:inline-block;margin-right:10px;font-weight:400;cursor:pointer"><input type="checkbox" class="cbDow" value="'+d[0]+'" onchange="updateCronBuilderResult()"> '+d[1]+'</label>';}).join('');
+    hh = '<label>星期(可多选)</label><div style="margin-bottom:8px">'+chk+'</div><div style="display:flex;gap:12px"><div><label>时</label><select id="cbHour" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,23,9)+'</select></div><div><label>分</label><select id="cbMin" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,59,0)+'</select></div></div>';
+  } else if (type === 'monthly') {
+    hh = '<div style="display:flex;gap:12px"><div><label>每月几日</label><select id="cbDay" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(1,31,1)+'</select></div><div><label>时</label><select id="cbHour" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,23,2)+'</select></div><div><label>分</label><select id="cbMin" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,59,0)+'</select></div></div>';
+  } else if (type === 'yearly') {
+    hh = '<div style="display:flex;gap:12px;flex-wrap:wrap"><div><label>月</label><select id="cbMonth" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(1,12,1)+'</select></div><div><label>日</label><select id="cbDay" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(1,31,1)+'</select></div><div><label>时</label><select id="cbHour" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,23,0)+'</select></div><div><label>分</label><select id="cbMin" onchange="updateCronBuilderResult()" style="width:90px">'+numOptions(0,59,0)+'</select></div></div>';
+  }
+  f.innerHTML = hh;
+  updateCronBuilderResult();
+}
+
+function buildCronExpr() {
+  var type = document.getElementById('cbType').value;
+  function val(id){ var el=document.getElementById(id); return el?el.value:'0'; }
+  function num(id){ var el=document.getElementById(id); return el?(parseInt(el.value)||0):0; }
+  if (type === 'every_n_min') {
+    var n = num('cbN')||1; return '*/'+n+' * * * *';
+  }
+  if (type === 'every_n_hour') {
+    var n = num('cbN')||1; var m = val('cbMin'); return m+' */'+n+' * * *';
+  }
+  if (type === 'daily') {
+    return val('cbMin')+' '+val('cbHour')+' * * *';
+  }
+  if (type === 'weekly') {
+    var dows = []; document.querySelectorAll('.cbDow:checked').forEach(function(c){dows.push(c.value);});
+    var dow = dows.length?dows.join(','):'*';
+    return val('cbMin')+' '+val('cbHour')+' * * '+dow;
+  }
+  if (type === 'monthly') {
+    return val('cbMin')+' '+val('cbHour')+' '+val('cbDay')+' * *';
+  }
+  if (type === 'yearly') {
+    return val('cbMin')+' '+val('cbHour')+' '+val('cbDay')+' '+val('cbMonth')+' *';
+  }
+  return '';
+}
+
+function updateCronBuilderResult() {
+  var expr = buildCronExpr();
+  document.getElementById('cbExpr').textContent = expr || '- - - - -';
+  document.getElementById('cbChinese').textContent = expr ? cronToChinese(expr) : '-';
+}
+
+function applyCronBuilder() {
+  var expr = buildCronExpr();
+  if (!expr) { toast('请先配置频率', 'error'); return; }
+  document.getElementById('taskCron').value = expr;
+  updateCronPreview();
+  closeModal('cronBuilderModal');
+  toast('已填入: '+expr, 'success', 2500);
+}
+
+function departedStatusLabel(s) {
+  var map = {
+    'pending': '<span style="color:var(--c-warn);font-weight:500">待确认</span>',
+    'confirmed': '<span style="color:var(--c-danger);font-weight:500">已确认屏蔽</span>',
+    'auto_confirmed': '<span style="color:var(--c-danger);font-weight:500">自动确认</span>',
+    'ignored': '<span style="color:var(--c-muted)">已忽略</span>'
+  };
+  return map[s] || escapeHtml(s || '-');
+}
+
+function loadDepartedCandidates() {
+  api('/api/departed-candidates?status=pending&limit=300').then(function(res){
+    if (res.code !== 200) { toast(res.message || '加载离职候选失败', 'error'); return; }
+    var rows = res.data || [];
+    var groups = {};
+    rows.forEach(function(c){
+      var key = (c.first_seen_at || c.last_seen_at || '').substring(0, 10) || '未记录日期';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(c);
+    });
+    var dates = Object.keys(groups).sort().reverse();
+    var html = dates.map(function(date){
+      var groupRows = groups[date] || [];
+      var header = '<tr style="background:var(--c-bg)"><td colspan="7" style="font-weight:600;color:var(--c-heading);padding:10px 12px">'+escapeHtml(date)+' 发现 '+groupRows.length+' 人</td></tr>';
+      var body = groupRows.map(function(c){
+        var ops = '<button class="btn-danger" onclick="confirmDepartedCandidate('+c.id+')">确认屏蔽</button>' +
+                  '<button class="btn-default" onclick="ignoreDepartedCandidate('+c.id+')">忽略</button>';
+        return '<tr>' +
+          '<td>'+escapeHtml(c.name || c.userid)+'</td>' +
+          '<td>'+escapeHtml(c.dept_name || '-')+'</td>' +
+          '<td>'+escapeHtml(c.job_title || '-')+'</td>' +
+          '<td>'+departedStatusLabel(c.status)+'</td>' +
+          '<td>'+escapeHtml(fmtDate(c.first_seen_at))+'</td>' +
+          '<td>'+escapeHtml(fmtDate(c.last_seen_at))+'</td>' +
+          '<td><div class="cron-actions">'+ops+'</div></td>' +
+        '</tr>';
+      }).join('');
+      return header + body;
+    }).join('');
+    document.getElementById('departedTbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:var(--c-muted);padding:20px">暂无待确认离职候选</td></tr>';
+  });
+}
+
+function scanDepartedCandidates() {
+  confirmDialog('确认现在扫描离职候选？\n\n本操作只生成候选名单，不会屏蔽任何员工。需要你在列表里逐条确认后才会生效。', function(){
+    toast('正在扫描离职候选...', 'success', 5000);
+    api('/api/departed-candidates/scan', 'POST', {auto_confirm:false, operator:'manual'}).then(function(res){
+      var data = res.data || {};
+      toast('扫描完成：新增 '+(data.created||0)+' 人，更新 '+(data.updated||0)+' 人', res.code===200?'success':'error', 6000);
+      loadDepartedCandidates();
+    });
+  }, '扫描离职候选');
+}
+
+function confirmDepartedCandidate(id) {
+  confirmDialog('确认屏蔽这名离职候选？\n\n确认后该员工会从人员管理列表隐藏，但不会删除历史记录。', function(){
+    api('/api/departed-candidates/'+id+'/confirm', 'POST', {operator:'manual', note:'后台人工确认离职'}).then(function(res){
+      toast(res.message || '已确认', res.code===200?'success':'error', 5000);
+      loadDepartedCandidates();
+      loadEmployees();
+    });
+  }, '确认离职候选');
+}
+
+function ignoreDepartedCandidate(id) {
+  confirmDialog('确认忽略这名候选？\n\n忽略只会记录审核痕迹，不会修改员工状态。', function(){
+    api('/api/departed-candidates/'+id+'/ignore', 'POST', {operator:'manual', note:'后台人工忽略'}).then(function(res){
+      toast(res.message || '已忽略', res.code===200?'success':'error', 5000);
+      loadDepartedCandidates();
+    });
+  }, '忽略离职候选');
+}
+
+function loadTasks() {
+  api('/api/tasks').then(function(res){
+    if (res.code !== 200) return;
+    var tasks = res.data || [];
+    var html = tasks.map(function(t){
+      var statusTag = t.enabled ? '<span style="color:var(--c-success);font-weight:500">● 启用</span>' : '<span style="color:var(--c-muted)">○ 禁用</span>';
+      var lastRun = fmtDate(t.last_run);
+      var lastStatus = t.last_status ? (t.last_status==='success'?'<span style="color:var(--c-success)">成功</span>':t.last_status==='failed'?'<span style="color:var(--c-danger)">失败</span>':'<span style="color:var(--c-primary)">运行中</span>') : '-';
+      var freq = cronToChinese(t.cron_expr);
+      var freqCell = '<div style="color:var(--c-heading);font-weight:500">'+freq+'</div><div style="color:var(--c-muted);font-size:11px;font-family:monospace;margin-top:2px">'+t.cron_expr+'</div>';
+      var toggleBtn = t.enabled
+        ? '<button class="btn-default" onclick="toggleTask('+t.id+',false)">禁用</button>'
+        : '<button class="btn-primary" onclick="toggleTask('+t.id+',true)">启用</button>';
+      return '<tr>' +
+        '<td>'+t.name+'</td>' +
+        '<td>'+(taskTypeLabel[t.task_type]||t.task_type)+'</td>' +
+        '<td>'+freqCell+'</td>' +
+        '<td>'+statusTag+'</td>' +
+        '<td>'+lastRun+'</td>' +
+        '<td>'+lastStatus+'</td>' +
+        '<td><div class="cron-actions">'+toggleBtn+
+          '<button class="btn-default" onclick="runTask('+t.id+')">执行</button>'+
+          '<button class="btn-default" onclick="editTask('+t.id+')">编辑</button>'+
+          '<button class="btn-danger" onclick="deleteTask('+t.id+')">删除</button>'+
+        '</div></td></tr>';
+    }).join('');
+    document.getElementById('cronTbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#999;padding:20px">暂无定时任务</td></tr>';
+  });
+}
+
+function openTaskModal() {
+  editTaskId = null;
+  document.getElementById('taskModalTitle').textContent = '添加定时任务';
+  document.getElementById('taskName').value = '';
+  document.getElementById('taskType').value = 'refresh_all';
+  document.getElementById('taskCron').value = '';
+  document.getElementById('taskConfig').value = '{}';
+  document.getElementById('adjDelta2').value = '1';
+  document.getElementById('adjReason2').value = '定时调整';
+  adjSelectedDepts = new Set();
+  adjSelectedEmps = [];
+  document.getElementById('empSearch').value = '';
+  document.getElementById('empSearchResult').style.display = 'none';
+  document.getElementById('deptDropdown').style.display = 'none';
+  renderSelectedEmps();
+  document.querySelectorAll('.adjCat').forEach(function(c){c.checked=false;});
+  updateCronPreview();
+  onTaskTypeChange();
+  document.getElementById('taskModal').style.display = 'flex';
+}
+
+function editTask(id) {
+  api('/api/tasks').then(function(res){
+    if (res.code !== 200) return;
+    var t = (res.data||[]).find(function(x){return x.id===id;});
+    if (!t) return;
+    editTaskId = id;
+    document.getElementById('taskModalTitle').textContent = '编辑定时任务';
+    document.getElementById('taskName').value = t.name;
+    document.getElementById('taskType').value = t.task_type;
+    document.getElementById('taskCron').value = t.cron_expr;
+    document.getElementById('taskConfig').value = t.config || '{}';
+    updateCronPreview();
+    onTaskTypeChange();
+    // 如果是dept_adjust,把已有config回填到表单
+    if (t.task_type === 'dept_adjust') {
+      try {
+        var cfg = JSON.parse(t.config || '{}');
+        document.getElementById('adjDelta2').value = cfg.delta || 1;
+        document.getElementById('adjReason2').value = cfg.reason || '定时调整';
+        adjSelectedDepts = new Set(cfg.depts || []);
+        adjSelectedEmps = (cfg.userids || []).map(function(uid){
+          var e = allEmployees.find(function(x){return x.userid===uid;});
+          return {userid:uid, name:e?e.name:uid};
+        });
+        renderDeptTags();
+        renderDeptDropdownList();
+        renderSelectedEmps();
+        document.querySelectorAll('.adjCat').forEach(function(c){
+          c.checked = (cfg.categories||[]).indexOf(c.value) >= 0;
+        });
+        updateAdjPreview();
+      } catch(e){}
+    }
+    document.getElementById('taskModal').style.display = 'flex';
+  });
+}
+
+function saveTask() {
+  var name = document.getElementById('taskName').value;
+  var taskType = document.getElementById('taskType').value;
+  var cron = document.getElementById('taskCron').value.trim();
+  if (!name) { toast('请输入任务名', 'error'); return; }
+  if (!cron) { toast('请输入cron表达式', 'error'); return; }
+  var parts = cron.split(/\s+/);
+  if (parts.length !== 5) { toast('cron表达式必须是5段(分 时 日 月 周)', 'error'); return; }
+  // dept_adjust 从表单收集配置
+  var config;
+  if (taskType === 'dept_adjust') {
+    var cfg = collectDeptAdjustConfig();
+    if (!cfg.depts.length && !cfg.categories.length && !cfg.userids.length) { toast('请至少勾选一个部门/分类或指定人员', 'error'); return; }
+    if (cfg.delta === 0) { toast('调整天数不能为0', 'error'); return; }
+    config = JSON.stringify(cfg);
+  } else {
+    config = document.getElementById('taskConfig').value || '{}';
+  }
+  var data = {name: name, task_type: taskType, cron_expr: cron, config: config};
+  if (editTaskId) {
+    api('/api/tasks/'+editTaskId, 'PUT', data).then(function(res){
+      toast(res.message, 'success'); closeModal('taskModal'); loadTasks();
+    });
+  } else {
+    api('/api/tasks', 'POST', data).then(function(res){
+      toast(res.message, 'success'); closeModal('taskModal'); loadTasks();
+    });
+  }
+}
+
+function toggleTask(id, enabled) {
+  api('/api/tasks/'+id+'/toggle', 'POST', {enabled: enabled}).then(function(res){
+    toast(res.message, 'success'); loadTasks();
+  });
+}
+
+function runTask(id) {
+  confirmDialog('确认立即执行此任务？', function(){
+    api('/api/tasks/run', 'POST', {task_id: id}).then(function(res){
+      toast(res.message, 'success'); loadTasks();
+    });
+  }, '执行任务');
+}
+
+function deleteTask(id) {
+  confirmDialog('确认删除此定时任务？', function(){
+    api('/api/tasks/'+id, 'DELETE').then(function(res){
+      toast('已删除', 'success'); loadTasks();
+    });
+  }, '删除任务');
+}
+
+function loadRules() {
+  api('/api/rules').then(function(res){
+    if (res.code !== 200) return;
+    var r = res.data;
+    var rows = [
+      {type:'normal', label:'正常月(3-11)', vals:['hourly','six_day','other','me']},
+      {type:'special', label:'特殊月(12-2)', vals:['hourly','six_day','other','me']}
+    ];
+    var html = rows.map(function(row){
+      var tds = row.vals.map(function(cat){ return '<td><input type="number" id="rule_'+row.type+'_'+cat+'" value="'+(r[row.type][cat]||0)+'" step="1"></td>'; }).join('');
+      return '<tr><td>'+row.label+'</td>'+tds+'<td><button class="btn-primary" style="padding:5px 12px;font-size:12px" onclick="saveRule(\''+row.type+'\')">保存</button></td></tr>';
+    }).join('');
+    document.getElementById('rulesTbody').innerHTML = html;
+  });
+  loadFutureReservations();
+}
+
+function futureStatusLabel(status) {
+  var map = {pending:'待扣减', applied:'已扣减', cancelled:'已取消', failed:'失败'};
+  return map[status] || status || '-';
+}
+
+function renderDaysX100(v) {
+  var n = Number(v || 0);
+  return (n / 100).toFixed(2).replace(/\.00$/, '') + '天';
+}
+
+function loadFutureReservations() {
+  api('/api/future-reservations').then(function(res){
+    if (res.code !== 200) return;
+    var data = res.data || {};
+    var summary = data.summary || {};
+    var rows = data.rows || [];
+    document.getElementById('futurePeriod').textContent = data.target_period || summary.target_period || '-';
+    document.getElementById('futurePendingCount').textContent = summary.pending_count || 0;
+    document.getElementById('futurePendingDays').textContent = renderDaysX100(summary.pending_days || 0);
+    document.getElementById('futureFailedCount').textContent = (summary.failed_count || 0);
+    if (!rows.length) {
+      document.getElementById('futureReservationsTbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999">暂无次月预扣减记录</td></tr>';
+      return;
+    }
+    document.getElementById('futureReservationsTbody').innerHTML = rows.map(function(r){
+      var status = r.status || '';
+      var color = status === 'failed' ? 'var(--c-danger)' : (status === 'pending' ? 'var(--c-primary)' : 'var(--c-muted)');
+      return '<tr>'+
+        '<td>'+escapeHtml(r.name || r.userid)+'</td>'+
+        '<td>'+escapeHtml(r.dept_name || '-')+'</td>'+
+        '<td>'+escapeHtml(r.leave_start_date || '-')+'</td>'+
+        '<td class="col-num">'+renderDaysX100(r.days)+'</td>'+
+        '<td style="color:'+color+';font-weight:600">'+futureStatusLabel(status)+'</td>'+
+        '<td style="font-family:monospace;font-size:12px">'+escapeHtml(r.ref_id || '-')+'</td>'+
+        '<td>'+fmtDate(r.created_at)+'</td>'+
+      '</tr>';
+    }).join('');
+  });
+}
+
+function saveRule(mt) {
+  var data = {};
+  ['hourly','six_day','other','me'].forEach(function(cat){
+    data[cat] = parseInt(document.getElementById('rule_'+mt+'_'+cat).value) || 0;
+  });
+  var promises = Object.keys(data).map(function(cat){
+    return api('/api/rules', 'POST', {month_type: mt, category: cat, days: data[cat]});
+  });
+  Promise.all(promises).then(function(){ toast('规则已保存', 'success'); });
+}
+
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    var detailModal = document.getElementById('employeeDetailModal');
+    if (detailModal && detailModal.style.display === 'flex') closeModal('employeeDetailModal');
+  }
+});
+
+// 启动: 检查登录状态
+if (getAuthPassword()) {
+  initApp();
+} else {
+  showLogin();
+}
+</script>
+</body>
+</html>

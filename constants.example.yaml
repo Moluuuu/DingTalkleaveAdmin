@@ -1,0 +1,38 @@
+dingtalk:
+  token_url: "https://oapi.dingtalk.com/gettoken"
+  dept_list_url: "https://oapi.dingtalk.com/topapi/v2/department/listsub"
+  user_list_url: "https://oapi.dingtalk.com/topapi/v2/user/list"
+  user_detail_url: "https://oapi.dingtalk.com/topapi/v2/user/get"
+  quota_list_url: "https://oapi.dingtalk.com/topapi/attendance/vacation/quota/list"
+  quota_update_url: "https://oapi.dingtalk.com/topapi/attendance/vacation/quota/update"
+
+leave_code: "YOUR_DINGTALK_LEAVE_CODE"
+
+six_day_dept_ids: []
+
+my_userid: "YOUR_ADMIN_USERID"
+
+op_userid: "YOUR_OPERATOR_USERID"
+
+quota_rules:
+  normal:
+    hourly: 5
+    six_day: 6
+    other: 4
+    me: 8
+  special:
+    hourly: 20
+    six_day: 18
+    other: 0
+    me: 0
+
+special_months: [12, 1, 2]
+
+rate_limit:
+  request_interval: 0.3
+  max_retries: 3
+  retry_delay: 5
+
+sync:
+  root_dept_id: 1
+  hourly_keywords: ["小时工"]

@@ -1,0 +1,12 @@
+{
+  "_comment": "leaveAdmin 钉盘小时备份配置。appKey/appSecret 仍从 config.json 读取；这里不放密钥。",
+  "unionId": "TODO_填写操作者unionId",
+  "spaceName": "公休余额灾备",
+  "spaceId": "TODO_共享钉盘空间spaceId，已创建则填写；未填写时工具会尝试创建",
+  "parentId": "0",
+  "viewerUserId": "TODO_可选：需要额外授权下载的钉钉userId",
+  "corpId": "TODO_可选：viewerUserId所属corpId",
+  "keep": 24,
+  "timeout": 30,
+  "logPath": "logs/dingpan-backup.log"
+}
