@@ -2,11 +2,11 @@
 真实执行参数保护、从备份包恢复。所有钉钉调用走 fake client，绝不访问真实 API。"""
 import pytest
 
-import windows_restore_leave_balance as wr
-import dingpan_backup as db_mod
+from leaveadmin import windows_restore_leave_balance as wr
+from leaveadmin import dingpan_backup as db_mod
 
 
-LEAVE_CODE = "2574891a-b8e3-447e-bd1b-0241b5aff3ad"
+LEAVE_CODE = "TEST_LEAVE_CODE"
 
 
 class FakeQuotaClient:

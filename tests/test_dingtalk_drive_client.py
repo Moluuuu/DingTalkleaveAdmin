@@ -5,7 +5,7 @@ not DingTalk availability.
 """
 import json
 
-from dingpan_backup import DingTalkDriveClient, BackupError
+from leaveadmin.dingpan_backup import DingTalkDriveClient, BackupError
 
 
 class FakeResponse:

@@ -2,6 +2,25 @@
 import asyncio
 from datetime import datetime
 
+import pytest
+
+
+class FrozenDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        base = cls(2026, 6, 30, 12, 0, 0)
+        if tz is not None:
+            return base.replace(tzinfo=tz)
+        return base
+
+
+@pytest.fixture(autouse=True)
+def freeze_database_calendar(monkeypatch):
+    """未来月份预占用例固定在 2026-06-30，避免真实日期跨月后测试变味。"""
+    from leaveadmin import database
+
+    monkeypatch.setattr(database, "datetime", FrozenDateTime)
+
 
 def _next_month_ts_july_1_2026():
     # 服务器本地时间语义下的 2026-07-01 00:00:00，例子同用户给的 1782835200000
@@ -27,7 +46,7 @@ async def _seed_employee(db, userid="u001", name="张三", category="six_day", d
 
 
 def test_parse_leave_start_date_local_timestamp():
-    import database
+    from leaveadmin import database
 
     parsed = database.parse_leave_start_date(_next_month_ts_july_1_2026(), now=datetime(2026, 6, 30, 12, 0, 0))
     assert parsed["mode"] == "next"
@@ -36,7 +55,7 @@ def test_parse_leave_start_date_local_timestamp():
 
 
 def test_parse_leave_start_date_rejects_far_future():
-    import database
+    from leaveadmin import database
 
     parsed = database.parse_leave_start_date("2026-08-01", now=datetime(2026, 6, 30, 12, 0, 0))
     assert parsed["mode"] == "unsupported"
@@ -44,8 +63,8 @@ def test_parse_leave_start_date_rejects_far_future():
 
 
 def test_future_check_ok_and_reject(monkeypatch, tmp_path):
-    import database
-    import dingtalk_ops
+    from leaveadmin import database
+    from leaveadmin import dingtalk_ops
 
     db_path = tmp_path / "future_check.db"
     monkeypatch.setattr(database, "DB_PATH", db_path)
@@ -79,8 +98,8 @@ def test_future_check_ok_and_reject(monkeypatch, tmp_path):
 
 
 def test_future_check_rejects_far_future(monkeypatch, tmp_path):
-    import database
-    import dingtalk_ops
+    from leaveadmin import database
+    from leaveadmin import dingtalk_ops
 
     db_path = tmp_path / "future_far.db"
     monkeypatch.setattr(database, "DB_PATH", db_path)
@@ -98,8 +117,8 @@ def test_future_check_rejects_far_future(monkeypatch, tmp_path):
 
 
 def test_future_deduct_creates_pending_and_is_idempotent(monkeypatch, tmp_path):
-    import database
-    import dingtalk_ops
+    from leaveadmin import database
+    from leaveadmin import dingtalk_ops
 
     db_path = tmp_path / "future_deduct.db"
     monkeypatch.setattr(database, "DB_PATH", db_path)
@@ -130,8 +149,8 @@ def test_future_deduct_creates_pending_and_is_idempotent(monkeypatch, tmp_path):
 
 
 def test_future_refund_pending_cancels(monkeypatch, tmp_path):
-    import database
-    import dingtalk_ops
+    from leaveadmin import database
+    from leaveadmin import dingtalk_ops
 
     db_path = tmp_path / "future_refund.db"
     monkeypatch.setattr(database, "DB_PATH", db_path)
@@ -155,8 +174,8 @@ def test_future_refund_pending_cancels(monkeypatch, tmp_path):
 
 
 def test_apply_future_reservations_deducts_next_month_once(monkeypatch, tmp_path):
-    import database
-    import dingtalk_ops
+    from leaveadmin import database
+    from leaveadmin import dingtalk_ops
 
     db_path = tmp_path / "future_apply.db"
     monkeypatch.setattr(database, "DB_PATH", db_path)

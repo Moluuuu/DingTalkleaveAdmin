@@ -4,6 +4,7 @@ dingpan_backup_config.json
 constants.yaml
 .env
 .env.*
+!.env.example
 *.secret*
 *token*
 *cookie*

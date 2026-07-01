@@ -1,7 +1,7 @@
 """CLI/config helper tests for DingPan backup."""
 import json
 
-import dingpan_backup as db_mod
+from leaveadmin import dingpan_backup as db_mod
 
 
 def test_build_client_from_configs_reads_app_and_dingpan_config(tmp_path):

@@ -10,20 +10,27 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional
 
-import dingpan_backup
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from leaveadmin import dingpan_backup
+from leaveadmin.env import load_dotenv, project_root
 
 
-BASE_DIR = Path(__file__).resolve().parent
+load_dotenv()
+BASE_DIR = project_root()
 
 
 def _notify(title: str, content: str) -> None:
     """Best-effort DingTalk admin notification for scheduled backup failures."""
     try:
-        from dingtalk_ops import send_notify
+        from leaveadmin.dingtalk_ops import send_notify
 
         asyncio.run(send_notify(title, content))
     except Exception as exc:  # pragma: no cover - notification must never mask backup result

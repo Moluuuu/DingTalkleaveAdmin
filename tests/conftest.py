@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-# 让测试能 import 项目根目录下的模块
+# 让测试能 import leaveadmin 包和 scripts 工具
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

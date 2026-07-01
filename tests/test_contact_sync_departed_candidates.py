@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def test_departed_candidate_requires_confirmation_before_disabling(tmp_path, monkeypatch):
-    import database
+    from leaveadmin import database
 
     db_path = tmp_path / "admin.db"
     monkeypatch.setattr(database, "DB_PATH", db_path)
@@ -65,8 +65,8 @@ def test_departed_candidate_requires_confirmation_before_disabling(tmp_path, mon
 
 
 def test_scan_departed_candidates_default_pending_and_auto_confirm_leaves_audit(tmp_path, monkeypatch):
-    import database
-    import dingtalk_ops
+    from leaveadmin import database
+    from leaveadmin import dingtalk_ops
 
     db_path = tmp_path / "admin.db"
     monkeypatch.setattr(database, "DB_PATH", db_path)
@@ -136,7 +136,7 @@ def test_scan_departed_candidates_default_pending_and_auto_confirm_leaves_audit(
 
 
 def test_sync_contacts_only_upserts_and_never_auto_disables(monkeypatch):
-    import dingtalk_ops
+    from leaveadmin import dingtalk_ops
 
     class FakeTokenManager:
         async def get_token(self, app_key, app_secret):

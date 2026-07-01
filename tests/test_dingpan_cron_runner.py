@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-import run_dingpan_backup_cron as runner
+from scripts import run_dingpan_backup_cron as runner
 
 
 def test_cron_runner_dry_run_uses_configs_without_upload(sample_db, tmp_path, capsys):

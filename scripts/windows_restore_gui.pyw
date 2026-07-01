@@ -13,12 +13,17 @@ import threading
 import traceback
 import webbrowser
 from pathlib import Path
+import sys
 from tkinter import BOTH, END, LEFT, RIGHT, X, Y, BooleanVar, StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 
-import dingpan_backup
-import windows_restore_leave_balance as restore_core
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from leaveadmin import dingpan_backup
+from leaveadmin import windows_restore_leave_balance as restore_core
 
 APP_TITLE = "公休余额紧急恢复工具"
 BASE_DIR = Path(__file__).resolve().parent

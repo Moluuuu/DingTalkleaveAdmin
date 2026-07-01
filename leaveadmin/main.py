@@ -3,6 +3,8 @@
 端口 18001
 """
 import json
+import os
+import sys
 import asyncio
 from pathlib import Path
 from datetime import datetime
@@ -12,8 +14,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Any
+from leaveadmin.env import load_dotenv, project_root
 
-from database import (
+from leaveadmin.database import (
     init_db, get_all_employees, get_quota_logs, get_cron_runs,
     get_quota_rules, update_quota_rule, get_employee_by_userid,
     get_snapshots, rollback_snapshot, get_snapshot_detail,
@@ -25,7 +28,7 @@ from database import (
     confirm_departed_candidate, ignore_departed_candidate,
     list_future_reservations
 )
-from dingtalk_ops import (
+from leaveadmin.dingtalk_ops import (
     sync_contacts, refresh_all_balances, refresh_all_balances_async,
     get_task_progress, adjust_balance,
     batch_monthly_assign, token_manager, load_config, CONSTANTS,
@@ -37,6 +40,10 @@ from dingtalk_ops import (
     refund_leave_balance_with_future, apply_future_reservations
 )
 import uuid
+
+load_dotenv()
+PROJECT_ROOT = project_root()
+RUNNER_SCRIPT = PROJECT_ROOT / "scripts" / "run_dingpan_backup_cron.py"
 
 
 @asynccontextmanager
@@ -541,10 +548,9 @@ async def api_run_task(req: TaskRunRequest):
         path = "/api/annual-dept-reset"
     elif ttype == "dingpan_backup":
         import subprocess
-        BASE_DIR = Path(__file__).parent
         subprocess.Popen(
-            [str(BASE_DIR / "run_dingpan_backup_cron.py")],
-            cwd=str(BASE_DIR),
+            [sys.executable, str(RUNNER_SCRIPT)],
+            cwd=str(PROJECT_ROOT),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -562,4 +568,4 @@ async def api_run_task(req: TaskRunRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=18001, reload=False)
+    uvicorn.run("leaveadmin.main:app", host="0.0.0.0", port=18001, reload=False)

@@ -5,6 +5,7 @@ systemd 管理: leaveadmin-scheduler.service
 """
 import asyncio
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -12,13 +13,16 @@ from pathlib import Path
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from leaveadmin.env import load_dotenv, project_root
 
 # 确保print立即输出到日志
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-DB_PATH = Path(__file__).parent / "admin.db"
-BASE_DIR = Path(__file__).parent
+load_dotenv()
+PROJECT_ROOT = project_root()
+DB_PATH = Path(os.getenv("LEAVEADMIN_DB_PATH", str(PROJECT_ROOT / "admin.db"))).resolve()
+RUNNER_SCRIPT = PROJECT_ROOT / "scripts" / "run_dingpan_backup_cron.py"
 API_BASE = "http://localhost:18001"
 AUTH = __import__("os").getenv("LEAVEADMIN_AUTH_PASSWORD", "change-me")
 
@@ -76,8 +80,8 @@ def run_task(task_id, task_type, task_name, config):
             call_api("/api/annual-dept-reset", "POST", json.loads(config or "{}"))
         elif task_type == "dingpan_backup":
             result = subprocess.run(
-                [str(BASE_DIR / "run_dingpan_backup_cron.py")],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=900,
+                [sys.executable, str(RUNNER_SCRIPT)],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=900,
             )
             if result.stdout:
                 print(result.stdout.strip())

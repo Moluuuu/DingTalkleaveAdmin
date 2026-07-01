@@ -15,8 +15,8 @@ if str(ROOT) not in sys.path:
 
 def test_init_hourly_employee_always_full_quota(monkeypatch, tmp_path):
     """小时工无论哪天入职都给满 default_quota 天。"""
-    import dingtalk_ops
-    import database as db
+    from leaveadmin import dingtalk_ops
+    from leaveadmin import database as db
 
     db_path = tmp_path / "test_hourly.db"
     monkeypatch.setattr(db, "DB_PATH", db_path)
@@ -39,8 +39,8 @@ def test_init_hourly_employee_always_full_quota(monkeypatch, tmp_path):
 
 def test_init_employee_before_10th_gets_half_quota(monkeypatch, tmp_path):
     """10 号前入职的非小时工，给 default_quota / 2。"""
-    import dingtalk_ops
-    import database as db
+    from leaveadmin import dingtalk_ops
+    from leaveadmin import database as db
 
     db_path = tmp_path / "test_half.db"
     monkeypatch.setattr(db, "DB_PATH", db_path)
@@ -63,8 +63,8 @@ def test_init_employee_before_10th_gets_half_quota(monkeypatch, tmp_path):
 
 def test_init_employee_on_or_after_10th_gets_zero(monkeypatch, tmp_path):
     """10 号及之后入职的非小时工，不给额度。"""
-    import dingtalk_ops
-    import database as db
+    from leaveadmin import dingtalk_ops
+    from leaveadmin import database as db
 
     db_path = tmp_path / "test_zero.db"
     monkeypatch.setattr(db, "DB_PATH", db_path)
@@ -86,8 +86,8 @@ def test_init_employee_on_or_after_10th_gets_zero(monkeypatch, tmp_path):
 
 def test_init_employee_without_hired_date_gets_zero(monkeypatch, tmp_path):
     """入职日期缺失时安全兜底，不给额度。"""
-    import dingtalk_ops
-    import database as db
+    from leaveadmin import dingtalk_ops
+    from leaveadmin import database as db
 
     db_path = tmp_path / "test_nodate.db"
     monkeypatch.setattr(db, "DB_PATH", db_path)
@@ -109,7 +109,7 @@ def test_init_employee_without_hired_date_gets_zero(monkeypatch, tmp_path):
 
 def test_fetch_user_detail_prioritizes_hired_date(monkeypatch):
     """hired_date 存在时优先返回 hired_date。"""
-    import dingtalk_ops
+    from leaveadmin import dingtalk_ops
     import httpx
 
     class FakeResponse:
@@ -139,7 +139,7 @@ def test_fetch_user_detail_prioritizes_hired_date(monkeypatch):
 
 def test_fetch_user_detail_falls_back_to_create_time(monkeypatch):
     """hired_date 缺失时回退到 create_time。"""
-    import dingtalk_ops
+    from leaveadmin import dingtalk_ops
 
     class FakeResponse:
         def json(self):
@@ -170,7 +170,7 @@ def test_fetch_user_detail_falls_back_to_create_time(monkeypatch):
 
 def test_upsert_employee_returns_is_new(monkeypatch, tmp_path):
     """首次插入返回 (True, userid)，重复返回 (False, userid)。"""
-    import database as db
+    from leaveadmin import database as db
 
     db_path = tmp_path / "test_upsert.db"
     monkeypatch.setattr(db, "DB_PATH", db_path)
@@ -192,7 +192,7 @@ def test_upsert_employee_returns_is_new(monkeypatch, tmp_path):
 
 def test_upsert_employee_stores_hired_date(monkeypatch, tmp_path):
     """hired_date 写入并持久化。"""
-    import database as db
+    from leaveadmin import database as db
 
     db_path = tmp_path / "test_hired.db"
     monkeypatch.setattr(db, "DB_PATH", db_path)

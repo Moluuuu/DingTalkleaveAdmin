@@ -5,8 +5,8 @@ import tarfile
 
 import pytest
 
-import dingpan_backup as db_mod
-from dingpan_backup import FakeDingpanClient
+from leaveadmin import dingpan_backup as db_mod
+from leaveadmin.dingpan_backup import FakeDingpanClient
 
 
 def _sha256(path):

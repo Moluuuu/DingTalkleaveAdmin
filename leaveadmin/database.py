@@ -4,10 +4,14 @@
 """
 import aiosqlite
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from leaveadmin.env import load_dotenv, project_root
 
-DB_PATH = Path(__file__).parent / "admin.db"
+load_dotenv()
+PROJECT_ROOT = project_root()
+DB_PATH = Path(os.getenv("LEAVEADMIN_DB_PATH", str(PROJECT_ROOT / "admin.db"))).resolve()
 
 
 async def init_db():

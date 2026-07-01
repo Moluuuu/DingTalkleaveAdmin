@@ -4,12 +4,14 @@
 import httpx
 import asyncio
 import json
+import os
 import time
 import aiosqlite
 import yaml
 from pathlib import Path
+from leaveadmin.env import load_dotenv, project_root
 from datetime import datetime
-from database import (
+from leaveadmin.database import (
     upsert_employee, get_all_employees, update_employee_balance, set_leave_balance_abs, get_leave_balance,
     get_employee_by_userid, add_quota_log, update_quota_log_status,
     add_cron_run, update_cron_run, get_rule_days,
@@ -23,8 +25,11 @@ from database import (
 )
 
 # 加载配置
-CONSTANTS_PATH = Path(__file__).parent / "constants.yaml"
-CONSTANTS_EXAMPLE_PATH = Path(__file__).parent / "constants.example.yaml"
+load_dotenv()
+PROJECT_ROOT = project_root()
+CONFIG_PATH = Path(os.getenv("LEAVEADMIN_CONFIG", str(PROJECT_ROOT / "config.json"))).resolve()
+CONSTANTS_PATH = Path(os.getenv("LEAVEADMIN_CONSTANTS", str(PROJECT_ROOT / "constants.yaml"))).resolve()
+CONSTANTS_EXAMPLE_PATH = PROJECT_ROOT / "constants.example.yaml"
 try:
     with open(CONSTANTS_PATH, "r", encoding="utf-8") as f:
         CONSTANTS = yaml.safe_load(f)
@@ -104,8 +109,7 @@ token_manager = TokenManager()
 
 
 def load_config():
-    config_path = Path(__file__).parent / "config.json"
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 

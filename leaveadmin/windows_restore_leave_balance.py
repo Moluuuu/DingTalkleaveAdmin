@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sqlite3
 import subprocess
 import tempfile
@@ -18,10 +19,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-import dingpan_backup
+from leaveadmin import dingpan_backup
+from leaveadmin.env import load_dotenv
 
-DEFAULT_LEAVE_CODE = "2574891a-b8e3-447e-bd1b-0241b5aff3ad"
-DEFAULT_OP_USERID = "152441066624250844"
+load_dotenv()
+DEFAULT_LEAVE_CODE = os.getenv("DINGTALK_LEAVE_CODE", "")
+DEFAULT_OP_USERID = os.getenv("DINGTALK_OP_USERID", "")
 TOKEN_URL = "https://oapi.dingtalk.com/gettoken"
 QUOTA_UPDATE_URL = "https://oapi.dingtalk.com/topapi/attendance/vacation/quota/update"
 
@@ -209,6 +212,10 @@ def restore(
     payloads = build_quota_payloads(db_path, leave_code=leave_code, op_userid=op_userid, period=period)
     if execute and not confirm_overwrite:
         raise ConfirmationRequired("真实覆盖钉钉假期余额必须显式确认")
+    if execute and not leave_code:
+        raise ConfirmationRequired("真实执行必须提供 --leave-code 或 DINGTALK_LEAVE_CODE")
+    if execute and not op_userid:
+        raise ConfirmationRequired("真实执行必须提供 --op-userid 或 DINGTALK_OP_USERID")
     report = {
         "dry_run": not execute,
         "executed": False,
