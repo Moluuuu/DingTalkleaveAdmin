@@ -7,5 +7,6 @@ PyYAML>=6.0
 APScheduler>=3.10.0
 pydantic>=2.0.0
 requests>=2.31.0
+jinja2
 pytest>=7.0.0
 pytest-asyncio>=0.21.0

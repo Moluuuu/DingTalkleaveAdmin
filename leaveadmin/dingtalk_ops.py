@@ -21,6 +21,8 @@ from leaveadmin.database import (
     parse_leave_start_date, sum_future_reservations, create_future_reservation,
     get_future_reservation_by_ref, cancel_future_reservation,
     list_pending_future_reservations, mark_future_reservation_applied, mark_future_reservation_failed,
+    update_employee_hired_date, _add_month, _current_period, needs_hourly_initialization,
+    prepare_hourly_monthly_resets, apply_hourly_monthly_reset, mark_hourly_monthly_reset_failed,
     DB_PATH,
 )
 
@@ -43,6 +45,7 @@ DINGTALK = CONSTANTS["dingtalk"]
 LEAVE_CODE = CONSTANTS["leave_code"]
 SIX_DAY_DEPT_IDS = set(CONSTANTS["six_day_dept_ids"])
 MY_USERID = CONSTANTS["my_userid"]
+USER_CATEGORY_OVERRIDES = CONSTANTS.get("user_category_overrides", {}) or {}
 OP_USERID = CONSTANTS["op_userid"]
 HOURLY_KEYWORDS = CONSTANTS["sync"]["hourly_keywords"]
 ROOT_DEPT_ID = CONSTANTS["sync"]["root_dept_id"]
@@ -76,6 +79,38 @@ def annual_reset_days_for_employee(emp: dict):
     if is_unlimited_balance_employee(emp):
         return 99
     return ANNUAL_LUMP_SUM_DEPT_DAYS.get(_dept_name(emp))
+
+
+async def carryover_balance_if_missing(userid: str, name: str = "", period: str = None, reason_prefix: str = "月度结转"):
+    """若指定 period 无 leave_balances 行，从最近月份继承余额建当月行（惰性结转）。
+
+    特殊政策部门(国网/骑手/蔬果)不参与月初发放，月度结转保证当月有行，
+    否则 deduct/check 会看到余额 0，误报"余额不足: 当前0天"。
+    返回 True=已结转，False=当月已有行或完全无历史（无历史时建 0 行避免空行）。
+    """
+    period = period or _current_period()
+    existing = await get_leave_balance(userid, period)
+    if existing.get("name"):
+        return False  # 当月已有行，不覆盖
+
+    carry = 0.0
+    carry_from = None
+    for back in range(1, 13):
+        prev_period = _add_month(period, -back)
+        prev = await get_leave_balance(userid, prev_period)
+        if prev.get("name"):
+            carry = prev["balance"]
+            carry_from = prev_period
+            break
+
+    nm = name or existing.get("name") or userid
+    if carry_from:
+        await set_leave_balance_abs(userid, carry, nm, f"特殊部门{reason_prefix}({carry_from})", "carryover", period=period)
+    else:
+        # 完全无历史：建 0 行，保证后续 deduct/check 有行可查
+        await set_leave_balance_abs(userid, 0.0, nm, f"特殊部门{reason_prefix}(无历史)", "carryover", period=period)
+    await update_employee_balance(userid, round(carry / 100, 2))
+    return True
 
 
 # ========== Token ==========
@@ -115,15 +150,63 @@ def load_config():
 
 # ========== 通讯录同步 ==========
 
+DINGTALK_TRANSIENT_ERRCODES = {90018, 88, 40014, 40001}
+
+
+def _is_transient_dingtalk_error(data: dict) -> bool:
+    errcode = data.get("errcode", 0)
+    errmsg = (data.get("errmsg") or "").lower()
+    return (
+        errcode in DINGTALK_TRANSIENT_ERRCODES
+        or "rate" in errmsg
+        or "limit" in errmsg
+        or "too many" in errmsg
+        or "频" in errmsg
+        or "限流" in errmsg
+    )
+
+
+async def _dingtalk_post_with_retry(url: str, token: str, body: dict, op_name: str, timeout: int = 15, max_attempts: int = 4):
+    """钉钉POST请求，遇到限流/瞬时错误退避重试；最终仍返回业务JSON，由调用方决定是否硬失败。"""
+    last_data = None
+    for attempt in range(1, max_attempts + 1):
+        async with httpx.AsyncClient(timeout=timeout) as c:
+            r = await c.post(url + "?access_token=" + token, json=body)
+        data = r.json()
+        last_data = data
+        if data.get("errcode", 0) == 0:
+            return data
+        if attempt >= max_attempts or not _is_transient_dingtalk_error(data):
+            return data
+        delay = min(2 ** (attempt - 1), 8)
+        print(f"[DingTalkRetry] {op_name} 第{attempt}次失败, {delay}s后重试: {data}")
+        await asyncio.sleep(delay)
+    return last_data or {}
+
+
+def _normalize_hired_date(value):
+    """把钉钉 hired_date/create_time 统一成 YYYY-MM-DD。hired_date 可能是毫秒戳数字。"""
+    if value is None or value == "":
+        return ""
+    if isinstance(value, (int, float)):
+        # 钉钉 hired_date 是当天 00:00:00 的毫秒戳，按本地日期解释。
+        return datetime.fromtimestamp(float(value) / 1000).strftime("%Y-%m-%d")
+    text = str(value).strip()
+    if not text:
+        return ""
+    if text.isdigit():
+        n = int(text)
+        if n > 100000000000:
+            return datetime.fromtimestamp(n / 1000).strftime("%Y-%m-%d")
+    return text[:10] if "T" in text else text[:10]
+
+
 async def _get_all_depts(token, parent_id=1, depth=0):
     """递归获取所有子部门。任何部门树接口异常都必须硬失败，禁止返回残缺树。"""
     all_depts = []
-    async with httpx.AsyncClient(timeout=15) as c:
-        r = await c.post(
-            DINGTALK["dept_list_url"] + "?access_token=" + token,
-            json={"dept_id": parent_id}
-        )
-    data = r.json()
+    data = await _dingtalk_post_with_retry(
+        DINGTALK["dept_list_url"], token, {"dept_id": parent_id}, f"拉取子部门 parent={parent_id}"
+    )
     if data.get("errcode", 0) != 0:
         raise RuntimeError(f"拉取子部门失败 parent={parent_id}: {data}")
     subs = data.get("result", [])
@@ -146,30 +229,26 @@ async def fetch_user_detail(token: str, userid: str):
     返回 hired_date 字符串或 None。
     优先级: hired_date > create_time。
     """
-    async with httpx.AsyncClient(timeout=15) as c:
-        r = await c.post(
-            DINGTALK["user_detail_url"] + "?access_token=" + token,
-            json={"userid": userid}
-        )
-    data = r.json()
+    data = await _dingtalk_post_with_retry(
+        DINGTALK["user_detail_url"], token, {"userid": userid}, f"获取用户详情 {userid}"
+    )
     if data.get("errcode", 0) != 0:
         print(f"[UserDetail] {userid} 获取失败: {data.get('errmsg', '?')}")
         return None
     result = data.get("result", {})
-    hired = result.get("hired_date") or ""
-    created = result.get("create_time") or ""
+    hired = _normalize_hired_date(result.get("hired_date"))
+    created = _normalize_hired_date(result.get("create_time"))
     if hired:
         print(f"[UserDetail] {userid} hired_date={hired}")
         return hired
     if created:
-        # create_time 格式: "2025-09-22T01:16:03.000Z"，截取日期部分
         print(f"[UserDetail] {userid} hired_date缺失, 用create_time={created}")
-        return created[:10] if "T" in created else created
+        return created
     print(f"[UserDetail] {userid} hired_date和create_time均缺失")
     return None
 
 
-async def init_employee_balance(userid: str, category: str, default_quota: float, hired_date: str = None):
+async def init_employee_balance(userid: str, category: str, default_quota: float, hired_date: str = None, name: str = ""):
     """为新入职员工初始化当月公休额度。
 
     规则:
@@ -180,11 +259,12 @@ async def init_employee_balance(userid: str, category: str, default_quota: float
     - hired_date 为空时按0天处理（安全兜底）
     """
     period = _current_period_sync()
-    if hired_date and hired_date.strip():
+    hired_date = _normalize_hired_date(hired_date)
+    if hired_date:
         try:
-            hire_dt = datetime.fromisoformat(hired_date.replace("Z", "+00:00").replace("+00:00", "").split("T")[0])
+            hire_dt = datetime.fromisoformat(hired_date)
         except (ValueError, TypeError):
-            hire_dt = datetime.strptime(hired_date[:10], "%Y-%m-%d") if len(hired_date) >= 10 else datetime.now()
+            hire_dt = datetime.now()
         day_of_month = hire_dt.day
     else:
         day_of_month = 99  # 未知日期，不给额度
@@ -196,20 +276,36 @@ async def init_employee_balance(userid: str, category: str, default_quota: float
     else:
         days = 0.0
 
-    if days > 0:
-        balance_x100 = round(days * 100, 2)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT INTO leave_balances (userid, name, balance, period, updated_at, created_at) VALUES (?,?,?,?,?,?)"
-                " ON CONFLICT(userid, period) DO NOTHING",
-                (userid, "", balance_x100, period, datetime.now().isoformat(), datetime.now().isoformat())
-            )
-            await db.commit()
-        print(f"[NewEmployee] {userid} category={category} hire_date={hired_date} day={day_of_month} → init {days}天 ({balance_x100}×100)")
-    else:
-        print(f"[NewEmployee] {userid} category={category} hire_date={hired_date} day={day_of_month} → 0天，不初始化")
+    balance_x100 = round(days * 100, 2)
+    nm = name or userid
+    now = datetime.now().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO leave_balances (userid, name, balance, period, month_type, updated_at, created_at) VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT(userid, period) DO UPDATE SET "
+            "balance=excluded.balance, name=excluded.name, month_type=excluded.month_type, updated_at=excluded.updated_at "
+            "WHERE leave_balances.balance=0 AND NOT EXISTS ("
+            "SELECT 1 FROM balance_transactions "
+            "WHERE balance_transactions.userid=excluded.userid "
+            "AND balance_transactions.created_at >= COALESCE(leave_balances.created_at, '') "
+            "AND balance_transactions.action NOT IN ('carryover')"
+            ")",
+            (userid, nm, balance_x100, period, _target_month_type(period), now, now)
+        )
+        await db.commit()
 
-    return days
+    # 初始化写入后必须回读真实行。旧逻辑使用 DO NOTHING 后仍无条件把员工镜像
+    # 改成5天，造成 employees=5 但 leave_balances=0 的分裂。
+    actual = await get_leave_balance(userid, period)
+    actual_balance_x100 = actual["balance"]
+    actual_days = round(actual_balance_x100 / 100, 2)
+    await update_employee_balance(userid, actual_days)
+    print(
+        f"[NewEmployee] {userid} {nm} category={category} hire_date={hired_date} "
+        f"day={day_of_month} → init {days}天 ({balance_x100}×100), "
+        f"actual {actual_days}天 ({actual_balance_x100}×100)"
+    )
+    return actual_days
 
 
 def _current_period_sync():
@@ -233,7 +329,12 @@ async def _pull_active_contacts(upsert: bool = True):
     seen_userids = set()
     total = 0
     dept_user_counts = {}
-    new_employees = []  # (userid, category, default_quota)
+    new_employees = []  # 非小时工仍需获取入职日期后初始化
+    new_employee_count = 0
+    init_target_count = 0
+    init_count = 0
+    init_zero_count = 0
+    init_failures = []
 
     for dept in all_depts:
         dept_id = dept["dept_id"]
@@ -243,12 +344,10 @@ async def _pull_active_contacts(upsert: bool = True):
         dept_count = 0
 
         while has_more:
-            async with httpx.AsyncClient(timeout=15) as c:
-                r = await c.post(
-                    DINGTALK["user_list_url"] + "?access_token=" + token,
-                    json={"dept_id": dept_id, "cursor": cursor, "size": 100}
-                )
-            user_result = r.json()
+            user_result = await _dingtalk_post_with_retry(
+                DINGTALK["user_list_url"], token, {"dept_id": dept_id, "cursor": cursor, "size": 100},
+                f"拉取部门人员 dept={dept_id}/{dept_name}"
+            )
             if user_result.get("errcode", 0) != 0:
                 raise RuntimeError(f"拉取部门人员失败 dept={dept_id}/{dept_name}: {user_result}")
 
@@ -293,6 +392,9 @@ async def _pull_active_contacts(upsert: bool = True):
                     is_me = 1
                     category = "me"
 
+                if userid in USER_CATEGORY_OVERRIDES:
+                    category = USER_CATEGORY_OVERRIDES[userid]
+
                 month_type = "special" if datetime.now().month in SPECIAL_MONTHS else "normal"
                 default_quota = await get_rule_days(month_type, category)
 
@@ -314,26 +416,63 @@ async def _pull_active_contacts(upsert: bool = True):
                     }
                     is_new, _ = await upsert_employee(emp)
                     if is_new and not force_disabled:
-                        new_employees.append((userid, category, default_quota))
+                        new_employee_count += 1
+
+                    if not force_disabled and category == "hourly":
+                        # 新员工直接初始化；若之前初始化异常或被0占位行挡住，
+                        # 后续通讯录同步也会按需重试。已经有真实业务流水的0余额不会重发。
+                        should_init = is_new or await needs_hourly_initialization(userid)
+                        if should_init:
+                            init_target_count += 1
+                            try:
+                                initialized_days = await init_employee_balance(
+                                    userid, category,
+                                    5 if not is_cron_adjust_excluded(emp) else default_quota,
+                                    None, name
+                                )
+                                if initialized_days > 0:
+                                    init_count += 1
+                                else:
+                                    init_zero_count += 1
+                                    init_failures.append(
+                                        f"{name}({userid}): 小时工实际余额为{initialized_days}天"
+                                    )
+                            except Exception as e:
+                                init_failures.append(f"{name}({userid}): {e}")
+                                print(f"[Sync] 新员工 {userid} 额度初始化失败: {e}")
+                    elif is_new and not force_disabled:
+                        # 非小时工仍需详情接口提供入职日期后按入职日规则计算。
+                        new_employees.append((userid, name, category, default_quota))
                 total += 1
 
             await asyncio.sleep(REQUEST_INTERVAL)
         dept_user_counts[str(dept_id)] = dept_count
 
-    # 为新入职员工初始化额度
-    init_count = 0
+    # 为非小时工新员工获取入职日期并初始化额度。
     if new_employees:
-        print(f"[Sync] 发现 {len(new_employees)} 名新员工，正在获取入职日期并初始化额度...")
-        for userid, category, default_quota in new_employees:
+        print(f"[Sync] 发现 {len(new_employees)} 名非小时工新员工，正在获取入职日期并初始化额度...")
+        for userid, name, category, default_quota in new_employees:
             try:
                 hired_date = await fetch_user_detail(token, userid)
-                days = await init_employee_balance(userid, category, default_quota, hired_date)
-                if days > 0:
+                if hired_date:
+                    await update_employee_hired_date(userid, hired_date)
+                initialized_days = await init_employee_balance(userid, category, default_quota, hired_date, name)
+                if initialized_days > 0:
                     init_count += 1
+                else:
+                    init_failures.append(
+                        f"{name}({userid}): 实际余额为{initialized_days}天"
+                    )
                 await asyncio.sleep(0.5)  # 避免接口限流
             except Exception as e:
+                init_failures.append(f"{name}({userid}): {e}")
                 print(f"[Sync] 新员工 {userid} 额度初始化失败: {e}")
-        print(f"[Sync] 新员工额度初始化完成: {init_count}/{len(new_employees)} 人获得额度")
+
+    if new_employee_count or init_target_count:
+        print(
+            f"[Sync] 新员工额度初始化完成: {init_count}/{init_target_count} 人实际获得额度"
+            + (f"，失败 {len(init_failures)} 人" if init_failures else "")
+        )
 
     return {
         "total": total,
@@ -341,8 +480,12 @@ async def _pull_active_contacts(upsert: bool = True):
         "dept_count": len(all_depts),
         "dept_user_counts": dept_user_counts,
         "complete": True,
-        "new_employees": len(new_employees),
+        "new_employees": new_employee_count,
+        "init_targets": init_target_count,
         "init_count": init_count,
+        "init_zero": init_zero_count,
+        "init_failed": len(init_failures),
+        "init_failure_details": init_failures[:20],
     }
 
 
@@ -378,12 +521,10 @@ async def scan_departed_candidates(config: dict = None, operator: str = "cron"):
     if auto_confirm:
         candidates = await get_departed_candidates(status="pending", limit=1000)
         for cand in candidates:
-            if cand.get("source_run_id") != source_run_id:
-                continue
             confirm = await confirm_departed_candidate(
                 cand["id"],
                 operator=operator or "cron-auto",
-                note="定时任务自动确认离职候选",
+                note="自动屏蔽离职候选人(开关开启)",
                 auto=True,
             )
             if confirm.get("ok"):
@@ -766,9 +907,9 @@ async def set_balance(token, userid, new_balance_days, reason, operator, batch_i
             "userid": userid
         }
     }
-    async with httpx.AsyncClient(timeout=15) as c:
-        r = await c.post(DINGTALK["quota_update_url"] + "?access_token=" + token, json=body)
-    d = r.json()
+    d = await _dingtalk_post_with_retry(
+        DINGTALK["quota_update_url"], token, body, f"更新公休额度 {userid}", timeout=15
+    )
     return d.get("errcode") == 0, d
 
 
@@ -827,25 +968,65 @@ async def send_notify(title: str, content: str):
 
 
 async def batch_monthly_assign(month_type="normal"):
-    """月初批量发放(累加),以leave_balances为权威,不推钉钉(凌晨cron统一推)"""
+    """月初批量处理：小时工绝对重置为5天且按月幂等，其他人员沿用原累加规则。"""
     employees = await get_all_employees()
+    period = _current_period()
 
     batch_id = f"monthly_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     snap_count = await create_balance_snapshot(batch_id, "pre_monthly")
     print(f"[Batch] 已生成操作前快照: {snap_count}人")
     cron_id = await add_cron_run("monthly_assign", "running", f"批量发放 {month_type}")
 
-    total = len(employees)
+    hourly_employees = [
+        emp for emp in employees
+        if emp.get("category") == "hourly" and not is_cron_adjust_excluded(emp)
+    ]
+    try:
+        hourly_plan = await prepare_hourly_monthly_resets(period, batch_id, hourly_employees)
+    except Exception as e:
+        await update_cron_run(cron_id, "failed", f"小时工重置名单准备失败: {e}", len(employees), 0, 1, 0)
+        raise
+    hourly_resets = hourly_plan["rows"]
+    hourly_reset_userids = {row["userid"] for row in hourly_resets}
+
+    total = len({emp["userid"] for emp in employees} | hourly_reset_userids)
     success = 0
     failed = 0
     skipped = 0
     fail_detail = []
 
-    for emp in employees:
-        if is_cron_adjust_excluded(emp):
+    for reset in hourly_resets:
+        if reset["status"] == "success":
             skipped += 1
             continue
+        try:
+            result = await apply_hourly_monthly_reset(period, reset["userid"], 5, month_type)
+            if result["idempotent"]:
+                skipped += 1
+            else:
+                success += 1
+        except Exception as e:
+            failed += 1
+            fail_detail.append(f"{reset['name']}: 小时工重置失败 {e}")
+            await mark_hourly_monthly_reset_failed(period, reset["userid"], str(e))
+
+    for emp in employees:
+        if is_cron_adjust_excluded(emp):
+            # 特殊政策部门不发放，但必须结转上月余额建当月行，否则当月无行
+            # 导致 deduct/check 误报"余额不足: 当前0天"。
+            try:
+                await carryover_balance_if_missing(emp["userid"], emp.get("name") or "", reason_prefix="月度结转")
+                skipped += 1
+            except Exception as e:
+                failed += 1
+                fail_detail.append(f"{emp['name']}: 结转失败 {e}")
+            continue
         category = emp["category"]
+        if category == "hourly":
+            # 首次运行后入职的小时工已在入职同步中获得5天，不加入重跑名单。
+            if emp["userid"] not in hourly_reset_userids:
+                skipped += 1
+            continue
         delta = await get_rule_days(month_type, category)
         if delta == 0:
             skipped += 1

@@ -9,6 +9,7 @@ constants.yaml
 *token*
 *cookie*
 .cache/
+private/
 
 # databases / backups / runtime data
 *.db

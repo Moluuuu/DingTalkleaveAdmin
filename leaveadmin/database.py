@@ -168,6 +168,36 @@ async def init_db():
         except Exception:
             pass
 
+        # 月份级批次头保证即使首次名单为空，重跑也不会吸收月初后的新员工。
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS hourly_monthly_reset_runs (
+                period TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                created_at TEXT
+            )
+        """)
+
+        # 小时工月初重置批次明细：同一月份同一员工只执行一次，失败可重试。
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS hourly_monthly_resets (
+                period TEXT NOT NULL,
+                userid TEXT NOT NULL,
+                name TEXT,
+                batch_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                old_balance REAL,
+                new_balance REAL,
+                error_msg TEXT DEFAULT '',
+                created_at TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (period, userid)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_hourly_reset_period_status "
+            "ON hourly_monthly_resets(period, status)"
+        )
+
         # 未来月份公休预占：月底提交下月公休时先占用下月额度，月初初始化后再扣减
         await db.execute("""
             CREATE TABLE IF NOT EXISTS future_leave_reservations (
@@ -515,6 +545,16 @@ async def update_employee_balance(userid: str, balance: float):
 
 
 
+async def update_employee_hired_date(userid: str, hired_date: str):
+    """回写员工入职日期。通讯录列表接口没有该字段，详情接口补取后调用。"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE employees SET hired_date=?, updated_at=? WHERE userid=?",
+            (hired_date or "", datetime.now().isoformat(), userid)
+        )
+        await db.commit()
+
+
 async def set_leave_balance_abs(userid: str, balance_x100: float, name: str = "", reason: str = "", action: str = "adjust", period: str = None):
     """设 leave_balances 绝对值(×100)，同时写 balance_transactions 审计。供后台 adjust/rollback/monthly 用。
     返回 {old_x100, new_x100, name}"""
@@ -784,6 +824,193 @@ async def get_rule_days(month_type: str, category: str):
 # 替代钉钉额度的本地余额管控,宜搭将来直接调这套
 # 余额单位=天,支持0.5天精度,不取整
 
+async def prepare_hourly_monthly_resets(period: str, batch_id: str, employees: list):
+    """首次执行时固定当月小时工名单；重跑只返回原名单。"""
+    now = datetime.now().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        cursor = await db.execute(
+            "SELECT batch_id FROM hourly_monthly_reset_runs WHERE period=?",
+            (period,),
+        )
+        run = await cursor.fetchone()
+        created = run is None
+        if created:
+            await db.execute(
+                "INSERT INTO hourly_monthly_reset_runs (period, batch_id, created_at) VALUES (?,?,?)",
+                (period, batch_id, now),
+            )
+            if employees:
+                await db.executemany(
+                    "INSERT INTO hourly_monthly_resets "
+                    "(period, userid, name, batch_id, status, created_at, updated_at) "
+                    "VALUES (?,?,?,?, 'pending', ?, ?)",
+                    [
+                        (period, emp["userid"], emp.get("name") or emp["userid"], batch_id, now, now)
+                        for emp in employees
+                    ],
+                )
+        cursor = await db.execute(
+            "SELECT period, userid, name, batch_id, status, old_balance, new_balance, error_msg "
+            "FROM hourly_monthly_resets WHERE period=? ORDER BY userid",
+            (period,),
+        )
+        rows = [dict(row) for row in await cursor.fetchall()]
+        await db.commit()
+    return {"created": created, "rows": rows}
+
+
+async def apply_hourly_monthly_reset(period: str, userid: str, days: float, month_type: str):
+    """原子地把小时工当月额度重置为固定天数；成功记录再次调用时直接跳过。"""
+    target_x100 = round(days * 100, 2)
+    now = datetime.now().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        cursor = await db.execute(
+            "SELECT * FROM hourly_monthly_resets WHERE period=? AND userid=?",
+            (period, userid),
+        )
+        reset = await cursor.fetchone()
+        if reset is None:
+            await db.rollback()
+            raise RuntimeError(f"小时工月初重置名单不存在: {period}/{userid}")
+        if reset["status"] == "success":
+            await db.commit()
+            return {"idempotent": True, "old_x100": reset["old_balance"], "new_x100": reset["new_balance"]}
+
+        cursor = await db.execute(
+            "SELECT balance, name FROM leave_balances WHERE userid=? AND period=?",
+            (userid, period),
+        )
+        balance_row = await cursor.fetchone()
+        old_x100 = float(balance_row["balance"] or 0) if balance_row else 0.0
+        name = reset["name"] or (balance_row["name"] if balance_row else "") or userid
+        delta_x100 = round(target_x100 - old_x100, 2)
+        reason = f"小时工月初重置({month_type})为{days:g}天"
+        ref_id = f"hourly_monthly_reset:{period}:{userid}"
+
+        await db.execute(
+            "INSERT INTO leave_balances "
+            "(userid, name, balance, period, month_type, updated_at, created_at) "
+            "VALUES (?,?,?,?,?,?,?) "
+            "ON CONFLICT(userid, period) DO UPDATE SET "
+            "balance=excluded.balance, name=excluded.name, month_type=excluded.month_type, updated_at=excluded.updated_at",
+            (userid, name, target_x100, period, month_type, now, now),
+        )
+        await db.execute(
+            "UPDATE employees SET current_balance=?, updated_at=? WHERE userid=?",
+            (round(target_x100 / 100, 2), now, userid),
+        )
+        await db.execute(
+            "INSERT INTO balance_transactions "
+            "(userid, name, action, days, balance_before, balance_after, reason, ref_id, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (userid, name, "monthly_reset", delta_x100, old_x100, target_x100, reason, ref_id, now),
+        )
+        await db.execute(
+            "INSERT INTO quota_logs "
+            "(batch_id, userid, name, old_value, new_value, delta, reason, operator, status, error_msg, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                reset["batch_id"], userid, name, round(old_x100 / 100, 2), days,
+                round(delta_x100 / 100, 2), reason, "cron", "success", "", now,
+            ),
+        )
+        await db.execute(
+            "UPDATE hourly_monthly_resets "
+            "SET status='success', old_balance=?, new_balance=?, error_msg='', updated_at=? "
+            "WHERE period=? AND userid=?",
+            (old_x100, target_x100, now, period, userid),
+        )
+        await db.commit()
+    return {"idempotent": False, "old_x100": old_x100, "new_x100": target_x100}
+
+
+async def mark_hourly_monthly_reset_failed(period: str, userid: str, error_msg: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE hourly_monthly_resets SET status='failed', error_msg=?, updated_at=? "
+            "WHERE period=? AND userid=? AND status!='success'",
+            (error_msg[:500], datetime.now().isoformat(), period, userid),
+        )
+        await db.commit()
+
+
+async def needs_hourly_initialization(userid: str, period: str = None) -> bool:
+    """判断小时工当前周期是否需要补发首次5天额度。
+
+    新员工由调用方直接初始化。既有小时工在月初重置名单建立前即使尚无当月行，
+    也不抢先发放；名单建立后若重置失败或缺行，通讯录同步才会补发。0余额占位
+    仍沿用原重试规则，已经真实用完5天的员工不会重新发放。
+    """
+    period = period or _current_period()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT balance, created_at FROM leave_balances WHERE userid=? AND period=?",
+            (userid, period),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            cursor = await db.execute(
+                "SELECT 1 FROM hourly_monthly_resets WHERE period=? AND userid=? LIMIT 1",
+                (period, userid),
+            )
+            return await cursor.fetchone() is not None
+        if float(row[0] or 0) != 0:
+            return False
+        cursor = await db.execute(
+            "SELECT 1 FROM balance_transactions "
+            "WHERE userid=? AND created_at >= COALESCE(?, '') "
+            "AND action NOT IN ('carryover') LIMIT 1",
+            (userid, row[1]),
+        )
+        return await cursor.fetchone() is None
+
+
+async def _lazy_carryover(userid: str, period: str = None):
+    """当月无 leave_balances 行时, 从最近月份继承余额建当月行(惰性结转).
+
+    特殊政策部门(国网超市部/骑手部/蔬果品类部)不参与月初发放, 若月度结转
+    未执行到, deduct/check 会看到余额 0 而误报不足. 此函数兜底: 找到最近
+    一个有行的月份, 把余额搬到当月并写 carryover 审计; 完全无历史则建 0 行.
+    """
+    period = period or _current_period()
+    carry = 0.0
+    carry_name = ""
+    carry_from = None
+    for back in range(1, 13):
+        prev_period = _add_month(period, -back)
+        prev = await get_leave_balance(userid, prev_period)
+        if prev.get("name"):
+            carry = prev["balance"]
+            carry_name = prev["name"]
+            carry_from = prev_period
+            break
+    name = carry_name or userid
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO leave_balances (userid, name, balance, period, updated_at, created_at) "
+            "VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(userid, period) DO UPDATE SET "
+            "balance=excluded.balance, name=excluded.name, updated_at=excluded.updated_at",
+            (userid, name, carry, period, datetime.now().isoformat(), datetime.now().isoformat())
+        )
+        await db.commit()
+    if carry_from:
+        await _add_transaction(userid, name, "carryover", carry, 0.0, carry,
+                               f"月度结转({carry_from})", "")
+    else:
+        await _add_transaction(userid, name, "carryover", 0.0, 0.0, 0.0,
+                               "月度结转(无历史,建0行)", "")
+    try:
+        await update_employee_balance(userid, round(carry / 100, 2))
+    except Exception as e:
+        print(f"[sync] lazy_carryover 同步employees失败 userid={userid}: {e}", flush=True)
+    return {"balance": carry, "name": name, "period": period}
+
+
 def _current_period():
     """当前月份 YYYY-MM"""
     return datetime.now().strftime("%Y-%m")
@@ -990,6 +1217,9 @@ async def mark_future_reservation_failed(ref_id: str, error_msg: str):
 async def check_leave_balance(userid: str, days: float, period: str = None):
     """校验余额是否足够扣减days天,返回{ok, balance, need}"""
     bal = await get_leave_balance(userid, period)
+    if not bal.get("name"):
+        # 当月无行: 惰性结转, 避免误报"余额不足: 当前0天"
+        bal = await _lazy_carryover(userid, period)
     current = bal["balance"]
     ok = current >= days
     return {"ok": ok, "balance": current, "need": days}
@@ -1028,6 +1258,10 @@ async def deduct_leave_balance(userid: str, days: float, reason: str, ref_id: st
         return {"ok": True, "balance": existing["balance_after"], "message": "重复扣减已忽略(幂等)", "idempotent": True}
     period = period or _current_period()
     bal = await get_leave_balance(userid, period)
+    if not bal.get("name"):
+        # 当月无行(如特殊政策部门月初结转未跑/新入职): 惰性结转最近月份余额
+        # 否则 deduct 会看到余额 0, 误报"余额不足: 当前0天"
+        bal = await _lazy_carryover(userid, period)
     current = bal["balance"]
     if current < days:
         return {"ok": False, "message": f"余额不足: 当前{current}天 需要{days}天", "balance": current}

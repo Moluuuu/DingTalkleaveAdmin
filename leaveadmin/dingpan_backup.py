@@ -334,32 +334,60 @@ class DingTalkDriveClient(DingpanClient):
         # API. The old Drive list endpoint (/v1.0/drive/spaces/{spaceId}/files)
         # requires a Drive file permission that is not present in this tenant even
         # when Drive.Space.* permissions are granted.
-        response = self.session.post(
-            f"{self.API_BASE}/v2.0/storage/dentries/search",
-            params={"operatorId": self.union_id},
-            headers=self._headers(),
-            json={"keyword": DEFAULT_PREFIX, "option": {"maxResults": 50}},
-            timeout=self.timeout,
-        )
-        data = self._json(response)
-        items = data.get("items") or []
         result = []
-        for item in items:
-            dentry_uuid = item.get("dentryUuid") or item.get("uuid")
-            dentry_id = item.get("dentryId") or item.get("id")
-            result.append({
-                "file_id": item.get("fileId") or dentry_id or dentry_uuid,
-                "dentry_id": dentry_id,
-                "dentry_uuid": dentry_uuid,
-                "name": item.get("fileName") or item.get("name"),
-                "modified_time": item.get("modifyTime") or item.get("modifiedTime") or item.get("createTime") or 0,
-            })
+        next_token: str | None = None
+        seen_tokens = set()
+        while True:
+            option: Dict[str, Any] = {"maxResults": 50}
+            if next_token:
+                option["nextToken"] = next_token
+            response = self.session.post(
+                f"{self.API_BASE}/v2.0/storage/dentries/search",
+                params={"operatorId": self.union_id},
+                headers=self._headers(),
+                json={"keyword": DEFAULT_PREFIX, "option": option},
+                timeout=self.timeout,
+            )
+            data = self._json(response)
+            items = data.get("items") or []
+            for item in items:
+                dentry_uuid = item.get("dentryUuid") or item.get("uuid")
+                dentry_id = item.get("dentryId") or item.get("id")
+                result.append({
+                    "file_id": item.get("fileId") or dentry_id or dentry_uuid,
+                    "dentry_id": dentry_id,
+                    "dentry_uuid": dentry_uuid,
+                    "name": item.get("fileName") or item.get("name"),
+                    "modified_time": item.get("modifyTime") or item.get("modifiedTime") or item.get("createTime") or 0,
+                })
+            next_token = data.get("nextToken") or data.get("next_token")
+            if not next_token:
+                break
+            if next_token in seen_tokens:
+                raise BackupError(f"DingTalk search pagination repeated nextToken: {next_token}")
+            seen_tokens.add(next_token)
         return result
 
+    def _resolve_numeric_dentry_id(self, file_id: str) -> str:
+        """Return the numeric dentryId required by storage file APIs.
+
+        Storage search often returns dentryUuid, while delete/download endpoints use
+        the numeric dentryId. Numeric callers pass through unchanged; UUID-shaped
+        values are mapped through the documented queryDentryId bridge.
+        """
+        if str(file_id).isdigit():
+            return str(file_id)
+        mapping = self.query_dentry_id_by_uuid(str(file_id))
+        dentry_id = mapping.get("dentryId") or mapping.get("id")
+        if not dentry_id:
+            raise BackupError(f"queryDentryId response missing dentryId: {mapping}")
+        return str(dentry_id)
+
     def delete_file(self, space_id: str, file_id: str) -> None:
+        dentry_id = self._resolve_numeric_dentry_id(str(file_id))
         response = self.session.delete(
-            f"{self.API_BASE}/v1.0/drive/spaces/{space_id}/files/{file_id}",
-            params={"unionId": self.union_id},
+            f"{self.API_BASE}/v1.0/storage/spaces/{space_id}/dentries/{dentry_id}",
+            params={"toRecycleBin": "true", "unionId": self.union_id},
             headers=self._headers(),
             timeout=self.timeout,
         )

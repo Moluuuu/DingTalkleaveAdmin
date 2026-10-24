@@ -215,6 +215,49 @@ async def api_departed_candidates_scan(req: Request):
     return {"code": 200 if result.get("ok", True) else 500, "data": result, "message": result.get("message", "扫描完成")}
 
 
+@app.post("/api/departed-candidates/auto-confirm-toggle")
+async def api_departed_auto_confirm_toggle(req: Request):
+    """自动屏蔽离职候选人开关。
+
+    开启时: 更新「离职候选扫描」定时任务 config.auto_confirm=true,
+    并立即执行一次全量屏蔽(确认所有 pending 候选)。
+    关闭时: 仅更新 config, 不动现有候选。
+    """
+    body = {}
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    enabled = bool(body.get("enabled"))
+
+    tasks = await get_scheduled_tasks()
+    target = None
+    for t in tasks:
+        if t.get("task_type") == "departed_scan":
+            target = t
+            break
+    if not target:
+        return {"code": 404, "data": None, "message": "未找到离职候选扫描定时任务"}
+
+    cfg = {}
+    try:
+        cfg = json.loads(target.get("config") or "{}")
+    except Exception:
+        cfg = {}
+    cfg["auto_confirm"] = enabled
+    await update_scheduled_task(target["id"], config=json.dumps(cfg, ensure_ascii=False))
+
+    confirmed = 0
+    if enabled:
+        result = await scan_departed_candidates({"auto_confirm": True}, operator="manual")
+        confirmed = result.get("auto_confirmed", 0)
+
+    msg = "已开启自动屏蔽离职候选人" if enabled else "已关闭自动屏蔽离职候选人"
+    if enabled and confirmed:
+        msg += f"，并立即屏蔽 {confirmed} 名候选"
+    return {"code": 200, "data": {"enabled": enabled, "auto_confirmed": confirmed}, "message": msg}
+
+
 @app.post("/api/departed-candidates/{candidate_id}/confirm")
 async def api_departed_candidate_confirm(candidate_id: int, req: CandidateActionRequest):
     """人工确认离职候选，确认后才真正屏蔽 employees，并写审计。"""
@@ -403,10 +446,72 @@ async def api_leave_balance(userid: str, period: str = None):
     return {"code": 200, "data": bal}
 
 
+def _parse_oa_leave_range(start_time: str, end_time: str):
+    """将首尾均计入的OA时段转换为100倍天数和开始日期。"""
+    if not start_time or not end_time:
+        raise ValueError("请同时提供公休开始时段和结束时段")
+    leave_slots = []
+    for label, value in (("开始", start_time), ("结束", end_time)):
+        try:
+            date_text, half_day = value.split(" ")
+            leave_date = datetime.strptime(date_text, "%Y-%m-%d").date()
+            if leave_date.isoformat() != date_text or half_day not in ("上午", "下午"):
+                raise ValueError
+        except ValueError:
+            raise ValueError(
+                f"公休{label}时段格式错误，请填写有效日期及上午或下午，例如：2026-10-09 上午"
+            ) from None
+        leave_slots.append((leave_date, 0 if half_day == "上午" else 1))
+    (start_date, start_half), (end_date, end_half) = leave_slots
+    half_days = (end_date - start_date).days * 2 + end_half - start_half + 1
+    if half_days <= 0:
+        raise ValueError("公休结束时段不能早于开始时段")
+    if (start_date.year, start_date.month) != (end_date.year, end_date.month):
+        raise ValueError("公休申请不能跨月，请按月份分别提交")
+    return half_days * 50, start_date.isoformat()
+
+
 @app.get("/api/leave/check")
-async def api_leave_check(userid: str, days: float, period: str = None, leave_start_date: Any = None):
-    """校验余额是否足够(宜搭beforeSubmit调用)。leave_start_date落在下月时走预占校验。"""
+async def api_leave_check(
+    userid: str,
+    days: Optional[float] = None,
+    period: str = None,
+    leave_start_date: Any = None,
+    oa_start_time: Optional[str] = None,
+    oa_end_time: Optional[str] = None,
+):
+    """校验公休余额；OA起止时段优先，首尾半天均计入，不允许跨月。"""
+    oa_start_time = (oa_start_time or "").strip()
+    oa_end_time = (oa_end_time or "").strip()
+    if oa_start_time or oa_end_time:
+        try:
+            days, leave_start_date = _parse_oa_leave_range(oa_start_time, oa_end_time)
+        except ValueError as exc:
+            return {"code": 400, "data": {"ok": False, "msg": str(exc)}}
+        period = leave_start_date[:7]
+        # 下月由开始日期路由到预占校验；特殊部门仍查当前余额，避免提前结转。
+        if period != datetime.now().strftime("%Y-%m"):
+            period = None
+    elif days is None:
+        return {"code": 400, "data": {
+            "ok": False, "msg": "请提供公休天数，或同时提供公休开始时段和结束时段",
+        }}
+
     result = await check_leave_balance_with_future(userid, days, period, leave_start_date)
+    if result.get("ok"):
+        result["msg"] = ""
+    elif result.get("mode") == "future" and "available" in result:
+        result["msg"] = (
+            f"下月公休额度不足：本次申请{result['need'] / 100:g}天，"
+            f"可用{result['available'] / 100:g}天"
+        )
+    elif "balance" in result:
+        result["msg"] = (
+            f"公休余额不足：本次申请{result['need'] / 100:g}天，"
+            f"可用{result['balance'] / 100:g}天"
+        )
+    else:
+        result["msg"] = result.get("message") or "公休余额校验未通过，请核对申请信息"
     return {"code": 200 if result.get("ok") else 400, "data": result}
 
 
@@ -418,10 +523,35 @@ class DeductRequest(BaseModel):
     leave_start_date: Any = None
 
 
+class LeaveDeductRequest(BaseModel):
+    userid: str
+    days: Optional[float] = None
+    reason: str = ""
+    ref_id: str = ""
+    leave_start_date: Any = None
+    ost: Optional[str] = None
+    oet: Optional[str] = None
+
+
 @app.post("/api/leave/deduct")
-async def api_leave_deduct(req: DeductRequest):
-    """扣减余额(审批通过时调)。下月开始的公休写入预占，不扣当前月。"""
-    result = await deduct_leave_balance_with_future(req.userid, req.days, req.reason, req.ref_id, req.leave_start_date)
+async def api_leave_deduct(req: LeaveDeductRequest):
+    """审批通过扣减；OA起止时段优先，下月仍写预占而不扣当前月。"""
+    days = req.days
+    leave_start_date = req.leave_start_date
+    ost = (req.ost or "").strip()
+    oet = (req.oet or "").strip()
+    if ost or oet:
+        try:
+            days, leave_start_date = _parse_oa_leave_range(ost, oet)
+        except ValueError as exc:
+            return {"code": 400, "data": {"ok": False, "message": str(exc)}}
+    elif days is None:
+        return {"code": 400, "data": {
+            "ok": False, "message": "请提供公休天数，或同时提供公休开始时段和结束时段",
+        }}
+    result = await deduct_leave_balance_with_future(
+        req.userid, days, req.reason, req.ref_id, leave_start_date
+    )
     return {"code": 200 if result["ok"] else 400, "data": result}
 
 

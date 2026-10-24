@@ -36,16 +36,26 @@ def get_tasks():
 
 
 def call_api(path, method="POST", body=None):
-    """同步调API(scheduler是asyncio但API调用用subprocess避免阻塞)"""
+    """同步调API，并把 HTTP/API 失败显式抛出，禁止假成功。"""
+    cmd = ["curl", "-sS", "-X", method, f"{API_BASE}{path}", "-H", f"X-Auth:{AUTH}"]
+    if body is not None:
+        cmd += ["-H", "Content-Type:application/json", "-d", json.dumps(body, ensure_ascii=False)]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+    if result.returncode != 0:
+        raise RuntimeError(f"API调用失败 path={path} exit={result.returncode} stderr={stderr} stdout={stdout[:300]}")
     try:
-        cmd = ["curl", "-s", "-X", method, f"{API_BASE}{path}", "-H", f"X-Auth:{AUTH}"]
-        if body is not None:
-            cmd += ["-H", "Content-Type:application/json", "-d", json.dumps(body, ensure_ascii=False)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        return result.stdout
-    except Exception as e:
-        print(f"[Scheduler] 调API失败 {path}: {e}")
-        return None
+        data = json.loads(stdout) if stdout else {}
+    except Exception as exc:
+        raise RuntimeError(f"API返回非JSON path={path} stdout={stdout[:500]}") from exc
+    if isinstance(data, dict):
+        if data.get("code") not in (None, 200):
+            raise RuntimeError(f"API业务失败 path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
+        if data.get("failed", 0):
+            raise RuntimeError(f"API部分失败 path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
+    print(f"[Scheduler] API {path} => {json.dumps(data, ensure_ascii=False)[:500]}")
+    return data
 
 
 def run_task(task_id, task_type, task_name, config):
@@ -94,7 +104,7 @@ def run_task(task_id, task_type, task_name, config):
         elif task_type == "departed_scan":
             call_api("/api/departed-candidates/scan", "POST", json.loads(config or "{}"))
         else:
-            print(f"[Scheduler] 未知任务类型: {task_type}")
+            raise RuntimeError(f"未知任务类型: {task_type}")
 
         db = sqlite3.connect(str(DB_PATH))
         db.execute("UPDATE scheduled_tasks SET last_status='success' WHERE id=?", (task_id,))

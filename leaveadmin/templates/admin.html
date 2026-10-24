@@ -54,6 +54,9 @@ button { font-family:inherit; border:none; cursor:pointer; transition:all .15s; 
 /* Stat cards - 标题在上、数字在下,仅预警卡片标红 */
 .stat-cards { display:flex; gap:16px; margin-bottom:20px; }
 .stat-card { flex:1; background:var(--c-surface); padding:18px 20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--sh-sm); }
+.stat-card.clickable { cursor:pointer; transition:all .15s; }
+.stat-card.clickable:hover { border-color:var(--c-primary); box-shadow:var(--sh-md); transform:translateY(-1px); }
+.stat-card.active { border-color:var(--c-primary); background:var(--c-primary-l); }
 .stat-card .label { font-size:13px; color:var(--c-muted); font-weight:500; margin-bottom:8px; }
 .stat-card .num { font-size:30px; font-weight:700; color:var(--c-heading); line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
 .stat-card.stat-warn .num { color:var(--c-danger); }
@@ -195,6 +198,11 @@ input, select { font-family:inherit; }
 /* Login */
 #loginOverlay .modal { text-align:center; }
 #loginOverlay input { text-align:center; }
+
+/* 离职候选 自动屏蔽 switch */
+.switch .slider::before { content:''; position:absolute; width:16px; height:16px; left:2px; top:2px; background:#fff; border-radius:50%; transition:.2s; }
+.switch input:checked + .slider { background:var(--c-primary,#4f46e5); }
+.switch input:checked + .slider::before { transform:translateX(14px); }
 </style>
 </head>
 <body>
@@ -241,7 +249,7 @@ input, select { font-family:inherit; }
         <input type="text" id="filterJobInput" placeholder="筛选职位" autocomplete="off">
         <div class="combobox-list" id="filterJobList"></div>
       </div>
-      <select id="filterCategory" onchange="resetEmpPageAndRender()">
+      <select id="filterCategory" onchange="onCategoryFilterChange()">
         <option value="">全部分类</option>
         <option value="hourly">小时工</option>
         <option value="six_day">特殊部门</option>
@@ -291,6 +299,13 @@ input, select { font-family:inherit; }
     <div class="toolbar">
       <button class="btn-primary" onclick="scanDepartedCandidates()" style="padding:8px 14px;font-size:12px">扫描离职候选</button>
       <button class="btn-default" onclick="loadDepartedCandidates()" style="padding:8px 14px;font-size:12px">刷新</button>
+      <span id="departedAutoToggleWrap" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px">
+        <span style="color:var(--c-muted)">自动屏蔽</span>
+        <label class="switch" style="position:relative;display:inline-block;width:34px;height:20px;margin:0;cursor:pointer">
+          <input type="checkbox" id="departedAutoToggle" onchange="toggleDepartedAuto()" style="opacity:0;width:0;height:0">
+          <span class="slider" style="position:absolute;inset:0;background:var(--c-border,#cbd5e1);border-radius:20px;transition:.2s"></span>
+        </label>
+      </span>
       <span style="color:var(--c-muted);font-size:12px">同步通讯录现在只增不减；这里仅生成候选，确认后才真正屏蔽人员</span>
     </div>
     <table>
@@ -837,16 +852,48 @@ function bindBalanceDetailLinks() {
   });
 }
 
+var statQuickFilter = '';
+
 function renderStats() {
   var total = allEmployees.length;
   var hourly = allEmployees.filter(function(e){return e.category==='hourly';}).length;
   var six = allEmployees.filter(function(e){return e.category==='six_day';}).length;
   var lowBal = allEmployees.filter(function(e){return e.current_balance < 1;}).length;
+  var catEl = document.getElementById('filterCategory');
+  var currentCat = catEl ? catEl.value : '';
+  var allActive = (!currentCat && !statQuickFilter) ? ' active' : '';
+  var hourlyActive = (currentCat === 'hourly' && !statQuickFilter) ? ' active' : '';
+  var sixActive = (currentCat === 'six_day' && !statQuickFilter) ? ' active' : '';
+  var lowActive = (statQuickFilter === 'low') ? ' active' : '';
   document.getElementById('statCards').innerHTML =
-    '<div class="stat-card"><div class="label">总人数</div><div class="num">'+total+'</div></div>' +
-    '<div class="stat-card"><div class="label">小时工</div><div class="num">'+hourly+'</div></div>' +
-    '<div class="stat-card"><div class="label">职能部门</div><div class="num">'+six+'</div></div>' +
-    '<div class="stat-card stat-warn"><div class="label">余额不足1天</div><div class="num">'+lowBal+'</div></div>';
+    '<div class="stat-card clickable'+allActive+'" onclick="applyStatFilter(\'all\')" title="点击查看全部"><div class="label">总人数</div><div class="num">'+total+'</div></div>' +
+    '<div class="stat-card clickable'+hourlyActive+'" onclick="applyStatFilter(\'hourly\')" title="点击筛选小时工"><div class="label">小时工</div><div class="num">'+hourly+'</div></div>' +
+    '<div class="stat-card clickable'+sixActive+'" onclick="applyStatFilter(\'six_day\')" title="点击筛选职能部门"><div class="label">职能部门</div><div class="num">'+six+'</div></div>' +
+    '<div class="stat-card clickable stat-warn'+lowActive+'" onclick="applyStatFilter(\'low\')" title="点击筛选余额不足1天"><div class="label">余额不足1天</div><div class="num">'+lowBal+'</div></div>';
+}
+
+function applyStatFilter(type) {
+  var catEl = document.getElementById('filterCategory');
+  if (type === 'hourly' || type === 'six_day') {
+    statQuickFilter = '';
+    catEl.value = type;
+  } else if (type === 'low') {
+    statQuickFilter = 'low';
+    catEl.value = '';
+  } else {
+    statQuickFilter = '';
+    catEl.value = '';
+  }
+  empVisibleCount = empChunkSize;
+  empRenderedCount = 0;
+  renderStats();
+  renderEmployees();
+}
+
+function onCategoryFilterChange() {
+  statQuickFilter = '';
+  renderStats();
+  resetEmpPageAndRender();
 }
 
 var isPreviewMode = false;
@@ -923,10 +970,12 @@ function setHead(html) { document.querySelector('#panel-employees thead tr').inn
 function getFilteredEmployees() {
   var search = (document.getElementById('searchInput').value||'').toLowerCase();
   var cat = document.getElementById('filterCategory').value;
+  var lowOnly = statQuickFilter === 'low';
   return allEmployees.filter(function(e){
     var match = !search || (e.name||'').toLowerCase().indexOf(search)>=0 || (e.dept_name||'').toLowerCase().indexOf(search)>=0 || (e.userid||'').toLowerCase().indexOf(search)>=0;
     var catMatch = !cat || e.category === cat;
-    return match && catMatch;
+    var lowMatch = !lowOnly || e.current_balance < 1;
+    return match && catMatch && lowMatch;
   });
 }
 
@@ -1636,7 +1685,49 @@ function loadDepartedCandidates() {
       return header + body;
     }).join('');
     document.getElementById('departedTbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:var(--c-muted);padding:20px">暂无待确认离职候选</td></tr>';
+    loadDepartedAutoState();
   });
+}
+
+function loadDepartedAutoState() {
+  api('/api/tasks').then(function(res){
+    if (!res || res.code !== 200) return;
+    var tasks = res.data || [];
+    var on = false;
+    for (var i = 0; i < tasks.length; i++) {
+      if (tasks[i].task_type === 'departed_scan') {
+        try {
+          var cfg = JSON.parse(tasks[i].config || '{}');
+          on = !!cfg.auto_confirm;
+        } catch (e) { on = false; }
+        break;
+      }
+    }
+    var cb = document.getElementById('departedAutoToggle');
+    if (cb) cb.checked = on;
+  });
+}
+
+function toggleDepartedAuto() {
+  var cb = document.getElementById('departedAutoToggle');
+  var on = !!cb.checked;
+  var msg = on
+    ? '确认开启自动屏蔽离职候选人？\n\n开启后：\n1. 立即将当前所有待确认候选全部屏蔽；\n2. 每天定时扫描发现的离职候选将自动屏蔽，无需人工确认。\n\n如果最近有正常请假/调岗但未出现在通讯录的员工，可能被误屏蔽，请谨慎开启。'
+    : '确认关闭自动屏蔽离职候选人？\n\n关闭后，定时扫描只生成候选名单，需要你在列表里逐条人工确认才会屏蔽。';
+  confirmDialog(msg, function(){
+    toast('正在切换自动屏蔽...', 'success', 5000);
+    api('/api/departed-candidates/auto-confirm-toggle', 'POST', {enabled: on}).then(function(res){
+      if (res && res.code === 200) {
+        toast(res.message || (on ? '已开启' : '已关闭'), 'success', 6000);
+      } else {
+        toast((res && res.message) || '切换失败', 'error', 5000);
+        // 失败时回滚开关状态
+        cb.checked = !on;
+      }
+      loadDepartedCandidates();
+      loadEmployees();
+    });
+  }, on ? '开启自动屏蔽' : '关闭自动屏蔽');
 }
 
 function scanDepartedCandidates() {
