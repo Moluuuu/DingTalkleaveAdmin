@@ -1,0 +1,3 @@
+# Linux deployment entry points must remain executable after Windows checkout.
+*.sh text eol=lf
+*.service text eol=lf
