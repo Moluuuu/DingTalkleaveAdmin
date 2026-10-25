@@ -31,15 +31,9 @@ load_dotenv()
 PROJECT_ROOT = project_root()
 CONFIG_PATH = Path(os.getenv("LEAVEADMIN_CONFIG", str(PROJECT_ROOT / "config.json"))).resolve()
 CONSTANTS_PATH = Path(os.getenv("LEAVEADMIN_CONSTANTS", str(PROJECT_ROOT / "constants.yaml"))).resolve()
-CONSTANTS_EXAMPLE_PATH = PROJECT_ROOT / "constants.example.yaml"
-try:
-    with open(CONSTANTS_PATH, "r", encoding="utf-8") as f:
-        CONSTANTS = yaml.safe_load(f)
-except FileNotFoundError:
-    import sys
-    print("[WARN] constants.yaml not found, falling back to constants.example.yaml", file=sys.stderr)
-    with open(CONSTANTS_EXAMPLE_PATH, "r", encoding="utf-8") as f:
-        CONSTANTS = yaml.safe_load(f)
+# 缺失真实规则时应阻止启动，不能用示例额度规则接管生产。
+with open(CONSTANTS_PATH, "r", encoding="utf-8") as f:
+    CONSTANTS = yaml.safe_load(f)
 
 DINGTALK = CONSTANTS["dingtalk"]
 LEAVE_CODE = CONSTANTS["leave_code"]

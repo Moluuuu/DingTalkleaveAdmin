@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from leaveadmin.env import load_dotenv, project_root
+from leaveadmin.env import load_dotenv, project_root, admin_password
 
 # 确保print立即输出到日志
 sys.stdout.reconfigure(line_buffering=True)
@@ -22,9 +22,9 @@ sys.stderr.reconfigure(line_buffering=True)
 load_dotenv()
 PROJECT_ROOT = project_root()
 DB_PATH = Path(os.getenv("LEAVEADMIN_DB_PATH", str(PROJECT_ROOT / "admin.db"))).resolve()
-RUNNER_SCRIPT = PROJECT_ROOT / "scripts" / "run_dingpan_backup_cron.py"
+RUNNER_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "run_dingpan_backup_cron.py"
 API_BASE = "http://localhost:18001"
-AUTH = __import__("os").getenv("LEAVEADMIN_AUTH_PASSWORD", "change-me")
+AUTH = admin_password()
 
 
 def get_tasks():

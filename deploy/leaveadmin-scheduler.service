@@ -1,0 +1,18 @@
+[Unit]
+Description=LeaveAdmin scheduler
+After=network.target leaveadmin.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/leaveadmin/current
+EnvironmentFile=/etc/leaveadmin/leaveadmin.env
+ExecStartPre=/usr/bin/test -s ${LEAVEADMIN_DB_PATH}
+ExecStart=/opt/leaveadmin/current/.venv/bin/python -m leaveadmin.scheduler
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/yida/leaveAdmin/logs/scheduler.log
+StandardError=append:/opt/yida/leaveAdmin/logs/scheduler.log
+
+[Install]
+WantedBy=multi-user.target

@@ -27,3 +27,11 @@ def load_dotenv(path: str | Path | None = None) -> None:
         value = value.strip().strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def admin_password() -> str:
+    """API和调度器必须显式配置同一口令，禁止部署时使用示例默认值。"""
+    password = os.getenv("LEAVEADMIN_AUTH_PASSWORD", "")
+    if not password.strip() or password == "change-me":
+        raise RuntimeError("请配置 LEAVEADMIN_AUTH_PASSWORD，不能使用空值或示例默认值")
+    return password

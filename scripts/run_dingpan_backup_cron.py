@@ -59,9 +59,9 @@ def run_once(args: argparse.Namespace) -> dict:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="leaveAdmin 钉盘定时备份 runner")
-    parser.add_argument("--db", default=str(BASE_DIR / "admin.db"))
+    parser.add_argument("--db", default=os.getenv("LEAVEADMIN_DB_PATH", str(BASE_DIR / "admin.db")))
     parser.add_argument("--out-dir", default=str(BASE_DIR / "backups" / "dingpan_hourly"))
-    parser.add_argument("--app-config", default=str(BASE_DIR / "config.json"))
+    parser.add_argument("--app-config", default=os.getenv("LEAVEADMIN_CONFIG", str(BASE_DIR / "config.json")))
     parser.add_argument("--dingpan-config", default=str(BASE_DIR / "dingpan_backup_config.json"))
     parser.add_argument("--keep", type=int)
     parser.add_argument("--dry-run", action="store_true")

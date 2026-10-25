@@ -1,0 +1,18 @@
+[Unit]
+Description=LeaveAdmin API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/leaveadmin/current
+EnvironmentFile=/etc/leaveadmin/leaveadmin.env
+ExecStartPre=/usr/bin/test -s ${LEAVEADMIN_DB_PATH}
+ExecStartPre=/usr/bin/test -s ${LEAVEADMIN_CONFIG}
+ExecStartPre=/usr/bin/test -s ${LEAVEADMIN_CONSTANTS}
+ExecStart=/opt/leaveadmin/current/.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:18001 --timeout 120 --access-logfile /opt/yida/leaveAdmin/logs/access.log --error-logfile /opt/yida/leaveAdmin/logs/error.log --log-level info leaveadmin.main:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

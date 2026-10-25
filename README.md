@@ -54,6 +54,8 @@
 
 ## 快速启动
 
+以下用于本地开发。现有生产实例的发布请使用 [部署适配说明](deploy/README.md) 和 `requirements-production.txt`，不要覆盖生产配置或直接安装开发依赖。密码必须填写有效值，`change-me` 和空值会阻止启动。
+
 ```bash
 git clone https://github.com/Moluuuu/DingTalkleaveAdmin.git
 cd DingTalkleaveAdmin

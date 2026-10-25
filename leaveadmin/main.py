@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Any
-from leaveadmin.env import load_dotenv, project_root
+from leaveadmin.env import load_dotenv, project_root, admin_password
 
 from leaveadmin.database import (
     init_db, get_all_employees, get_quota_logs, get_cron_runs,
@@ -43,7 +43,8 @@ import uuid
 
 load_dotenv()
 PROJECT_ROOT = project_root()
-RUNNER_SCRIPT = PROJECT_ROOT / "scripts" / "run_dingpan_backup_cron.py"
+# 代码随发布目录切换，运行数据仍由 LEAVEADMIN_HOME 定位。
+RUNNER_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "run_dingpan_backup_cron.py"
 
 
 @asynccontextmanager
@@ -67,7 +68,7 @@ app.add_middleware(
 
 # ========== 密码校验 ==========
 
-AUTH_PASSWORD = __import__("os").getenv("LEAVEADMIN_AUTH_PASSWORD", "change-me")
+AUTH_PASSWORD = admin_password()
 
 
 class AuthRequest(BaseModel):
