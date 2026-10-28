@@ -1,6 +1,7 @@
 """单张人工登记：服务端读取OA事实，原扣由发送事务复查；不修改余额。"""
 import json
 from datetime import date
+from urllib.parse import urlsplit
 
 from leaveadmin.attendance_effects import prepare_public_leave, send_public_leave_once, send_attendance_payload
 
@@ -76,6 +77,9 @@ def registration_args(response, *, corp_id, instance_id, business_id, ref_id, ju
             for k in ('mobileUrl', 'pcUrl') if isinstance(t.get(k), str)}
     if jump_url not in urls:
         raise ValueError('跳转地址不是该审批返回的任务链接')
+    # 企业返回的任务URL缺少scheme；归属校验后仅补https，底层仍执行HTTPS校验。
+    if not urlsplit(jump_url).scheme:
+        jump_url = 'https://' + jump_url
     return dict(corp_id=corp_id, application_id=instance_id, revision=1,
                 predebit_ref=ref_id, userid=userid, approve_id=instance_id,
                 from_time=f'{start_text} {first[1]}', to_time=f'{end_text} {last[1]}',
