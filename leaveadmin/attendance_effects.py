@@ -60,7 +60,7 @@ def public_leave_payload(*, userid, approve_id, from_time, to_time, jump_url):
     return {
         "userid": userid, "approve_id": approve_id,
         "from_time": from_time, "to_time": to_time, "jump_url": jump_url,
-        "biz_type": 3, "tag_name": "请假", "sub_type": "公休##halfDay",
+        "biz_type": 3, "tag_name": "请假", "sub_type": "公休",
         "duration_unit": "halfDay", "calculate_model": 0,
     }
 
