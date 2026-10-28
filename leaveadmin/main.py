@@ -2,6 +2,7 @@
 公休余额管理后台 - FastAPI 主服务
 端口 18001
 """
+import hmac
 import json
 import os
 import sys
@@ -23,6 +24,7 @@ from leaveadmin.database import (
     get_depts, get_jobs, get_employees_by_filter, set_disabled,
     get_leave_balance, reset_leave_balance, get_all_leave_balances,
     get_balance_transactions, get_rule_days, cleanup_expired_snapshots,
+    get_leave_operation_evidence,
     get_scheduled_tasks, add_scheduled_task, update_scheduled_task,
     delete_scheduled_task, get_departed_candidates,
     confirm_departed_candidate, ignore_departed_candidate,
@@ -413,8 +415,14 @@ class RollbackRequest(BaseModel):
 @app.post("/api/rollback")
 async def api_rollback(req: RollbackRequest):
     """回滚某次快照(仅恢复本地DB余额,钉钉侧需手动另调)"""
-    count = await rollback_snapshot(req.batch_id)
-    return {"code": 200, "message": f"已回滚 {count} 人(本地DB),钉钉侧需手动恢复"}
+    result = await rollback_snapshot(req.batch_id, operator="manual_rollback")
+    if not result.get("ok"):
+        return JSONResponse(
+            status_code=400,
+            content={"code": 400, "data": result, "message": result.get("message", "回滚被拒绝")}
+        )
+    count = result.get("success", 0)
+    return {"code": 200, "data": result, "message": f"已回滚 {count} 人(本地DB),钉钉侧需手动恢复"}
 
 
 @app.post("/api/cleanup-snapshots")
@@ -432,7 +440,11 @@ class RollbackAdjustRequest(BaseModel):
 async def api_rollback_adjust(req: RollbackAdjustRequest):
     """回滚某次调整: 把涉及人员余额恢复到快照值(真正撤销钉钉侧)"""
     result = await rollback_adjustment(req.batch_id)
-    await cleanup_expired_snapshots()
+    if not result.get("ok"):
+        return JSONResponse(
+            status_code=400,
+            content={"code": 400, "data": result, "message": result.get("message", "回滚被拒绝")}
+        )
     return {"code": 200, "data": result}
 
 
@@ -602,6 +614,47 @@ async def api_leave_transactions(userid: str, limit: int = 50):
     """查某人余额变更流水"""
     data = await get_balance_transactions(userid, limit)
     return {"code": 200, "data": data}
+
+
+@app.get("/api/leave/operation-evidence")
+async def api_leave_operation_evidence(ref_id: str):
+    """只读返回原单证据；查到记录不等于已核实或可以执行扣返。"""
+    if not ref_id or ref_id != ref_id.strip():
+        raise HTTPException(status_code=400, detail="ref_id不能为空或含首尾空白")
+    evidence = await get_leave_operation_evidence(ref_id)
+    return {"code": 200, "data": evidence}
+
+
+class ManualAttendanceRequest(BaseModel):
+    instance_id: str
+    business_id: str
+    ref_id: str
+    jump_url: str
+
+
+@app.post('/api/leave/attendance/register-manual')
+async def api_register_manual_attendance(req: ManualAttendanceRequest, request: Request):
+    """独立凭据+服务端指定单据的人工登记；默认关闭，不接审批事件自动化。"""
+    secret = os.getenv('LEAVEADMIN_ATTENDANCE_AUTH', '')
+    allowed_instance = os.getenv('LEAVEADMIN_ATTENDANCE_INSTANCE_ID', '')
+    corp_id = os.getenv('LEAVEADMIN_ATTENDANCE_CORP_ID', '')
+    if not secret or not allowed_instance or not corp_id:
+        raise HTTPException(status_code=503, detail='人工假勤登记未启用')
+    if secret == AUTH_PASSWORD or not hmac.compare_digest(
+            request.headers.get('X-Attendance-Auth', '').encode(), secret.encode()):
+        raise HTTPException(status_code=403, detail='人工登记凭据无效')
+    if req.instance_id != allowed_instance:
+        raise HTTPException(status_code=403, detail='该审批不在本次人工登记范围')
+    from leaveadmin.attendance_registration import register_manual_leave
+    try:
+        result = await register_manual_leave(corp_id=corp_id, instance_id=req.instance_id,
+            business_id=req.business_id, ref_id=req.ref_id, jump_url=req.jump_url)
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(status_code=409, detail='审批或原扣核验未通过，未确认登记成功') from None
+    except Exception:
+        # 发生异常可能已有发送占位，调用者应查记录而非换号重发。
+        raise HTTPException(status_code=502, detail='登记结果未确认，请核查原单记录') from None
+    return {'code': 200, 'data': result}
 
 
 # ========== 定时任务管理 ==========

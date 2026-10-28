@@ -36,24 +36,48 @@ def get_tasks():
 
 
 def call_api(path, method="POST", body=None):
-    """同步调API，并把 HTTP/API 失败显式抛出，禁止假成功。"""
-    cmd = ["curl", "-sS", "-X", method, f"{API_BASE}{path}", "-H", f"X-Auth:{AUTH}"]
+    """同步调API，并把 HTTP/API 失败显式抛出，禁止假成功。
+    使用 curl --fail 确保 HTTP>=400 退出码非零，保留 JSON 业务错误检查。
+    覆盖顶层及 data 层业务失败，空响应/非JSON/HTTP异常/部分失败均硬失败。
+    顶层与 data 层状态共用最小循环校验，不以 success 计数 0 误判。
+    不得泄露 AUTH。
+    """
+    cmd = ["curl", "-sS", "--fail", "-X", method, f"{API_BASE}{path}", "-H", f"X-Auth:{AUTH}"]
     if body is not None:
         cmd += ["-H", "Content-Type:application/json", "-d", json.dumps(body, ensure_ascii=False)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     stdout = (result.stdout or "").strip()
     stderr = (result.stderr or "").strip()
     if result.returncode != 0:
-        raise RuntimeError(f"API调用失败 path={path} exit={result.returncode} stderr={stderr} stdout={stdout[:300]}")
+        raise RuntimeError(f"API调用失败 path={path} exit={result.returncode} stderr={stderr}")
+
+    # 非空契约：空响应视为失败
+    if not stdout:
+        raise RuntimeError(f"API返回空响应 path={path} stderr={stderr}")
+
     try:
-        data = json.loads(stdout) if stdout else {}
+        data = json.loads(stdout)
     except Exception as exc:
         raise RuntimeError(f"API返回非JSON path={path} stdout={stdout[:500]}") from exc
-    if isinstance(data, dict):
-        if data.get("code") not in (None, 200):
-            raise RuntimeError(f"API业务失败 path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
-        if data.get("failed", 0):
-            raise RuntimeError(f"API部分失败 path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"API返回非字典JSON path={path} stdout={stdout[:500]}")
+
+    # 顶层业务状态码校验: 所有成功接口契约为 code == 200
+    if data.get("code") != 200:
+        raise RuntimeError(f"API业务失败 path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
+
+    # 顶层及 data 层共用循环校验：检查 ok=False, success=False, failed > 0；区分布尔与计数，不以 success=0 计数误判
+    for layer in (data, data.get("data")):
+        if isinstance(layer, dict):
+            if layer.get("ok") is False:
+                raise RuntimeError(f"API业务失败(ok=False) path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
+            if layer.get("success") is False:
+                raise RuntimeError(f"API业务失败(success=False) path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
+            failed = layer.get("failed")
+            if isinstance(failed, (int, float)) and not isinstance(failed, bool) and failed > 0:
+                raise RuntimeError(f"API业务部分失败(failed={failed}) path={path} response={json.dumps(data, ensure_ascii=False)[:800]}")
+
     print(f"[Scheduler] API {path} => {json.dumps(data, ensure_ascii=False)[:500]}")
     return data
 

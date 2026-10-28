@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import time
+import uuid
 import aiosqlite
 import yaml
 from pathlib import Path
@@ -15,12 +16,12 @@ from leaveadmin.database import (
     upsert_employee, get_all_employees, update_employee_balance, set_leave_balance_abs, get_leave_balance,
     get_employee_by_userid, add_quota_log, update_quota_log_status,
     add_cron_run, update_cron_run, get_rule_days,
-    create_balance_snapshot, get_snapshot_detail, set_department_disabled,
+    create_balance_snapshot, get_snapshot_detail, rollback_snapshot, set_department_disabled,
     create_departed_candidates, get_departed_candidates, confirm_departed_candidate,
     check_leave_balance, deduct_leave_balance, refund_leave_balance,
     parse_leave_start_date, sum_future_reservations, create_future_reservation,
     get_future_reservation_by_ref, cancel_future_reservation,
-    list_pending_future_reservations, mark_future_reservation_applied, mark_future_reservation_failed,
+    list_pending_future_reservations, apply_future_reservation, mark_future_reservation_failed,
     update_employee_hired_date, _add_month, _current_period, needs_hourly_initialization,
     prepare_hourly_monthly_resets, apply_hourly_monthly_reset, mark_hourly_monthly_reset_failed,
     DB_PATH,
@@ -620,9 +621,6 @@ async def deduct_leave_balance_with_future(userid: str, days: float, reason: str
     if _is_special_policy_employee(emp):
         return await deduct_leave_balance(userid, days, reason, ref_id)
 
-    check = await check_leave_balance_with_future(userid, days, None, leave_start_date)
-    if not check.get("ok"):
-        return check
     if not ref_id or not str(ref_id).strip():
         return {"ok": False, "mode": "future", "message": "下月公休预占必须提供 ref_id 用于幂等"}
 
@@ -634,6 +632,7 @@ async def deduct_leave_balance_with_future(userid: str, days: float, reason: str
         target_period=parsed["target_period"],
         ref_id=ref_id,
         reason=reason or "下月公休预占",
+        month_type=_target_month_type(parsed["target_period"]),
     )
     result.update({"mode": "future", "target_period": parsed["target_period"], "leave_start_date": parsed["date"]})
     return result
@@ -643,22 +642,15 @@ async def refund_leave_balance_with_future(userid: str, days: float, reason: str
     """公休回退：优先处理未来预占，再退回当前月普通扣减。"""
     reservation = await get_future_reservation_by_ref(ref_id)
     if reservation:
-        status = reservation.get("status")
-        if status in ("pending", "failed"):
-            result = await cancel_future_reservation(ref_id, reason or "撤销/拒绝下月公休预占")
-            result["idempotent"] = False
-            return result
-        if status == "cancelled":
-            return {"ok": True, "mode": "future", "idempotent": True, "message": "下月公休预占已取消(幂等)"}
-        if status == "applied":
-            refund_ref = f"future_refund:{ref_id}"
-            existing_refund = await get_future_reservation_by_ref(refund_ref)
-            # 不复用 future 表记录 refund，直接依赖 balance_transactions 的 refund 幂等会被“必须有 deduct”挡住；这里用空ref_id执行一次并标cancelled。
-            result = await refund_leave_balance(userid, reservation["days"], reason or "撤销已应用的下月公休预占", "", period=reservation["target_period"])
-            if result.get("ok"):
-                await cancel_future_reservation(ref_id, reason or "撤销已应用的下月公休预占")
-                result.update({"mode": "future", "status": "cancelled", "target_period": reservation["target_period"]})
-            return result
+        result = await cancel_future_reservation(
+            ref_id, reason or "撤销/拒绝下月公休预占", userid=userid,
+        )
+        if result is None:
+            return {"ok": False, "message": "预占不存在，请核对原单"}
+        result.setdefault("idempotent", False)
+        if result.get("ok"):
+            result["target_period"] = reservation["target_period"]
+        return result
     return await refund_leave_balance(userid, days, reason, ref_id)
 
 
@@ -672,19 +664,16 @@ async def apply_future_reservations(period: str = None):
     details = []
     for r in reservations:
         ref_id = r.get("ref_id") or ""
-        apply_ref = f"future_apply:{ref_id}"
         try:
-            result = await deduct_leave_balance(
-                r["userid"],
-                r["days"],
-                "月底提交下月公休自动扣减",
-                apply_ref,
-                period=r["target_period"],
-            )
+            result = await apply_future_reservation(ref_id, period)
             if result.get("ok"):
-                await mark_future_reservation_applied(ref_id)
                 success += 1
-                details.append({"userid": r["userid"], "name": r.get("name"), "ok": True, "days": r["days"]})
+                details.append({
+                    "userid": r["userid"], "name": r.get("name"), "ok": True,
+                    "days": 0 if result.get("skipped") else r["days"],
+                    "skipped": result.get("skipped", False),
+                    "status": result.get("status"),
+                })
             else:
                 failed += 1
                 msg = result.get("message") or "扣减失败"
@@ -735,7 +724,7 @@ async def fetch_balances(userids):
 
 async def adjust_balance_batch(userids, delta_days, reason, operator="admin"):
     """批量调整余额(累加delta),以leave_balances为权威,不推钉钉(凌晨cron统一推)"""
-    batch_id = f"batch_adjust_{int(time.time())}"
+    batch_id = f"batch_adjust_{uuid.uuid4().hex}"
     await create_balance_snapshot(batch_id, "pre_batch_adjust", userids)
 
     success = 0
@@ -811,33 +800,10 @@ async def dept_adjust_batch(config: dict):
 
 
 async def rollback_adjustment(batch_id: str):
-    """回滚某次调整: 把涉及人员余额恢复到快照值。以leave_balances为权威,不推钉钉(凌晨cron统一推)"""
-    snapshots = await get_snapshot_detail(batch_id)
-    if not snapshots:
-        return {"success": 0, "failed": 0, "total": 0, "message": "找不到该批次的备份(可能已过期清理)"}
-
-    userids = [s["userid"] for s in snapshots]
-    rollback_batch_id = f"rollback_{int(time.time())}"
-    await create_balance_snapshot(rollback_batch_id, "pre_rollback", userids)
-
-    success = 0
-    failed = 0
-    details = []
-    for snap in snapshots:
-        uid = snap["userid"]
-        name = snap["name"]
-        target_balance = snap["balance"]
-        current = await query_balance(None, uid)
-        await set_leave_balance_abs(uid, round(target_balance * 100, 2), name, f"回滚{batch_id}", "rollback")
-        await update_employee_balance(uid, target_balance)
-        log_id = await add_quota_log({
-            "batch_id": rollback_batch_id, "userid": uid, "name": name,
-            "old_value": current, "new_value": target_balance, "delta": round(target_balance - current, 2),
-            "reason": f"回滚操作{batch_id[:20]}", "operator": "rollback", "status": "success"
-        })
-        success += 1
-        details.append({"userid": uid, "name": name, "success": True, "restored_to": target_balance})
-    return {"success": success, "failed": failed, "total": len(snapshots), "details": details}
+    """回滚某次调整: 委托数据库层统一恢复逻辑，保证同一事务内恢复权威余额、镜像及必要流水。
+    保持现有调用方所需的 details/total/success/failed/message/ok 结构。
+    """
+    return await rollback_snapshot(batch_id, operator="rollback")
 
 
 # 全局任务进度(进程内)
@@ -913,7 +879,7 @@ async def adjust_balance(userid, delta_days, reason, operator="admin"):
     if not emp:
         return {"success": False, "message": "员工不存在"}
 
-    batch_id = f"adjust_{int(time.time())}"
+    batch_id = f"adjust_{uuid.uuid4().hex}"
     await create_balance_snapshot(batch_id, "pre_adjust", [userid])
 
     current = await query_balance(None, userid)
@@ -966,7 +932,7 @@ async def batch_monthly_assign(month_type="normal"):
     employees = await get_all_employees()
     period = _current_period()
 
-    batch_id = f"monthly_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    batch_id = f"monthly_{uuid.uuid4().hex}"
     snap_count = await create_balance_snapshot(batch_id, "pre_monthly")
     print(f"[Batch] 已生成操作前快照: {snap_count}人")
     cron_id = await add_cron_run("monthly_assign", "running", f"批量发放 {month_type}")
@@ -1068,7 +1034,7 @@ async def annual_dept_reset(config: dict = None):
         if days is not None:
             targets.append((emp, days))
 
-    batch_id = f"annual_reset_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    batch_id = f"annual_reset_{uuid.uuid4().hex}"
     if targets:
         await create_balance_snapshot(batch_id, "pre_annual_reset", [emp["userid"] for emp, _ in targets])
     cron_id = await add_cron_run("annual_dept_reset", "running", "特殊部门年度额度重置")

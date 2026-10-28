@@ -1293,7 +1293,7 @@ function rollbackFromLog(batchId) {
         toast('回滚完成: 成功' + d.success + ' 失败' + d.failed, d.failed > 0 ? 'error' : 'success', 6000);
         loadLogs();
       } else {
-        toast('回滚失败', 'error');
+        toast('回滚失败: ' + (res.message || '请检查备份状态'), 'error', 6000);
       }
     });
   }, '回滚操作');
