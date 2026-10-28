@@ -625,6 +625,21 @@ async def api_leave_operation_evidence(ref_id: str):
     return {"code": 200, "data": evidence}
 
 
+@app.get('/api/leave/approval-detail')
+async def api_leave_approval_detail(instance_id: str):
+    # 企业应用凭据只留在Admin；保留原生响应，不伪造模板或实例字段。
+    allowed = os.getenv('LEAVEADMIN_ATTENDANCE_INSTANCE_ID', '')
+    if not allowed or instance_id != allowed:
+        raise HTTPException(status_code=403, detail='审批不在当前授权查询范围')
+    from leaveadmin.attendance_registration import fetch_approval
+    try:
+        response = await fetch_approval(instance_id)
+    except Exception:
+        raise HTTPException(status_code=502, detail='企业应用审批查询失败') from None
+    return {'code': 200, 'data': {'source': 'enterprise_app',
+            'instance_id': instance_id, 'response': response}}
+
+
 class ManualAttendanceRequest(BaseModel):
     instance_id: str
     business_id: str
